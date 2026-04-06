@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5, paddingHorizontal: SPACING.sm, backgroundColor: COLORS.white,
   },
   shareText: { fontSize: FONTS.sizes.xs, color: COLORS.text, fontWeight: '600' },
-  content: { paddingHorizontal: SPACING.xl, paddingTop: SPACING.md, paddingBottom: 20 },
+  content: { paddingHorizontal: SPACING.xl, paddingTop: SPACING.md, paddingBottom: 180 },
   flyerWrapper: { position: 'relative', marginBottom: 0 },
   flyerImage: {
     width: '100%', height: 280, borderRadius: RADIUS.xl,
