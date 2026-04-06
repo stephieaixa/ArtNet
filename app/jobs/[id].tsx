@@ -32,6 +32,7 @@ type Job = {
   location_city?: string;
   location_country?: string;
   disciplines?: string[];
+  requirements?: string[];
   start_date?: string;
   end_date?: string;
   deadline?: string;
@@ -417,6 +418,20 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
           </>
         )}
 
+        {/* Requirements */}
+        {(job.requirements ?? []).length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>⚠️ Requisitos específicos</Text>
+            <View style={styles.reqRow}>
+              {(job.requirements ?? []).map((r, i) => (
+                <View key={i} style={styles.reqChip}>
+                  <Text style={styles.reqChipText}>{r}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
         {/* Description */}
         {(translation?.description || job.description) && (
           <>
@@ -690,6 +705,9 @@ const styles = StyleSheet.create({
   payValue: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.primaryDark },
   sectionTitle: { fontSize: FONTS.sizes.sm, fontWeight: '800', color: COLORS.text, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: SPACING.base, marginBottom: SPACING.xs },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.sm },
+  reqRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.sm },
+  reqChip: { backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B', borderRadius: RADIUS.full, paddingVertical: 4, paddingHorizontal: SPACING.sm },
+  reqChipText: { fontSize: FONTS.sizes.xs, color: '#92400E', fontWeight: '700' },
   tag: { backgroundColor: COLORS.surfaceElevated, borderRadius: RADIUS.full, paddingVertical: 5, paddingHorizontal: SPACING.sm },
   tagText: { fontSize: FONTS.sizes.xs, color: COLORS.primary, fontWeight: '600' },
   body: { fontSize: FONTS.sizes.base, color: COLORS.textSecondary, lineHeight: 24 },

@@ -114,6 +114,7 @@ type ExtractedData = {
   contact_url: string;
   pay_info: string;
   disciplines?: string[];
+  requirements?: string[];
 };
 
 export default function FlyerPostScreen() {
@@ -248,7 +249,8 @@ Respondé ÚNICAMENTE con el JSON (sin markdown, sin bloques de código):
   "contact_email": "email de contacto",
   "contact_url": "URL para postularse",
   "pay_info": "información de salario o caché",
-  "disciplines": ["SOLO las disciplinas artísticas que SÍ buscan, en español"]
+  "disciplines": ["SOLO las disciplinas artísticas que SÍ buscan, en español"],
+  "requirements": ["requisitos específicos como: Pasaporte europeo, Equipo propio, Visa de trabajo, Inglés fluido, Disponibilidad inmediata — solo los que aparecen explícitamente, vacío si no hay"]
 }`;
 
       const text = await visionAI(base64, PROMPT, 1024);
@@ -275,6 +277,7 @@ Respondé ÚNICAMENTE con el JSON (sin markdown, sin bloques de código):
         setContactUrl(parsed.contact_url ?? '');
         setPayInfo(parsed.pay_info ?? '');
         setDisciplines(parsed.disciplines ?? []);
+        // requirements stored on the extracted object, used at post time
       } else {
         console.warn('[flyer] No JSON encontrado en respuesta, mostrando formulario vacío');
         showManualForm();
@@ -324,6 +327,7 @@ Respondé ÚNICAMENTE con el JSON (sin markdown, sin bloques de código):
       location_city: city.trim(),
       location_country: country.trim(),
       disciplines,
+      requirements: extracted?.requirements?.filter(Boolean) ?? [],
       start_date: startDate.trim(),
       end_date: endDate.trim(),
       deadline: deadline.trim(),

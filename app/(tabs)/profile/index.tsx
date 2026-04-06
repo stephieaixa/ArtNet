@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator, Linking, Share, Platform, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator, Linking, Share, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -29,8 +29,6 @@ export default function ProfileScreen() {
   const [profileComplete, setProfileComplete] = useState(false);
   const [profileChecked, setProfileChecked] = useState(false);
   const [socials, setSocials] = useState<{ instagram?: string; tiktok?: string; youtube?: string; facebook?: string; website?: string }>({});
-  const [editingLang, setEditingLang] = useState(false);
-  const [langInput, setLangInput] = useState('');
 
   const isArtist = user?.role !== 'venue';
 
@@ -269,75 +267,42 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      {/* Language selector */}
+      {/* Language selector — chip grid, no text input */}
       <View style={styles.section}>
-        <TouchableOpacity
-          style={styles.menuRow}
-          onPress={() => { setLangInput(targetLanguage === 'Español' ? '' : targetLanguage); setEditingLang(v => !v); }}
-          activeOpacity={0.7}
-        >
+        <View style={styles.langHeader}>
           <Text style={styles.menuEmoji}>🌐</Text>
           <View style={{ flex: 1 }}>
             <Text style={styles.menuLabel}>{t('profile.language')}</Text>
-            <Text style={styles.langCurrentText}>{isTranslating ? 'Traduciendo...' : targetLanguage}</Text>
+            <Text style={styles.langCurrentText}>
+              {isTranslating ? 'Traduciendo…' : targetLanguage}
+            </Text>
           </View>
-          {isTranslating
-            ? <ActivityIndicator size="small" color={COLORS.primary} />
-            : <Text style={styles.menuArrow}>{editingLang ? '▲' : '›'}</Text>
-          }
-        </TouchableOpacity>
-
-        {editingLang && (
-          <View style={styles.langPanel}>
-            <TextInput
-              style={styles.langInput}
-              value={langInput}
-              onChangeText={setLangInput}
-              placeholder="Ej: Italiano, Deutsch, 日本語, العربية..."
-              autoFocus
-              autoCapitalize="words"
-            />
-            {/* Quick suggestions — tap to apply directly */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langSuggestScroll}>
-              <View style={styles.langSuggestRow}>
-                {LANG_SUGGESTIONS.map(l => (
-                  <TouchableOpacity
-                    key={l.name}
-                    style={[styles.langSuggestChip, targetLanguage === l.name && styles.langSuggestChipActive]}
-                    onPress={async () => {
-                      setLangInput(l.name);
-                      setEditingLang(false);
-                      const ok = await setTargetLanguage(l.name);
-                      if (!ok) Alert.alert('Error', 'No se pudo traducir. Verificá tu conexión.');
-                    }}
-                    activeOpacity={0.75}
-                    disabled={isTranslating}
-                  >
-                    <Text style={styles.langSuggestFlag}>{l.flag}</Text>
-                    <Text style={[styles.langSuggestName, targetLanguage === l.name && styles.langSuggestNameActive]}>{l.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.langApplyBtn, (!langInput.trim() || isTranslating) && styles.langApplyBtnDisabled]}
-              onPress={async () => {
-                const name = langInput.trim() || 'Español';
-                setEditingLang(false);
-                const ok = await setTargetLanguage(name);
-                if (!ok) Alert.alert('Error', 'No se pudo traducir. Verificá tu conexión.');
-              }}
-              disabled={!langInput.trim() || isTranslating}
-              activeOpacity={0.85}
-            >
-              {isTranslating
-                ? <><ActivityIndicator size="small" color={COLORS.white} /><Text style={styles.langApplyBtnText}>  Traduciendo toda la app...</Text></>
-                : <Text style={styles.langApplyBtnText}>Aplicar idioma →</Text>
-              }
-            </TouchableOpacity>
-            <Text style={styles.langHint}>La IA traduce toda la interfaz una vez por idioma.</Text>
-          </View>
-        )}
+          {isTranslating && <ActivityIndicator size="small" color={COLORS.primary} />}
+        </View>
+        <View style={styles.langChipGrid}>
+          {LANG_SUGGESTIONS.map(l => {
+            const active = targetLanguage === l.name;
+            return (
+              <TouchableOpacity
+                key={l.name}
+                style={[styles.langChip, active && styles.langChipActive]}
+                onPress={async () => {
+                  if (active || isTranslating) return;
+                  const ok = await setTargetLanguage(l.name);
+                  if (!ok) Alert.alert('Error', 'No se pudo traducir. Verificá tu conexión.');
+                }}
+                activeOpacity={0.75}
+                disabled={isTranslating}
+              >
+                <Text style={styles.langChipFlag}>{l.flag}</Text>
+                <Text style={[styles.langChipName, active && styles.langChipNameActive]}>{l.name}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <Text style={styles.langHint}>
+          Inglés y Francés cambian al instante. Otros idiomas usan IA (puede tardar unos segundos).
+        </Text>
       </View>
 
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
@@ -413,29 +378,24 @@ const styles = StyleSheet.create({
   menuLabel: { flex: 1, fontSize: FONTS.sizes.base, color: COLORS.text, fontWeight: '500' },
   menuArrow: { fontSize: 20, color: COLORS.textMuted },
   langCurrentText: { fontSize: FONTS.sizes.xs, color: COLORS.primary, fontWeight: '600', marginTop: 1 },
-  langPanel: { padding: SPACING.base, paddingTop: 0, gap: SPACING.sm },
-  langInput: {
-    backgroundColor: COLORS.background, borderWidth: 1.5, borderColor: COLORS.primary,
-    borderRadius: RADIUS.md, padding: SPACING.sm, fontSize: FONTS.sizes.base, color: COLORS.text,
+  langHeader: {
+    flexDirection: 'row', alignItems: 'center', padding: SPACING.base,
+    borderTopWidth: 1, borderTopColor: COLORS.borderLight, gap: SPACING.md,
   },
-  langSuggestScroll: { marginHorizontal: -SPACING.xs },
-  langSuggestRow: { flexDirection: 'row', gap: SPACING.xs, paddingHorizontal: SPACING.xs, paddingVertical: 4 },
-  langSuggestChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+  langChipGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm,
+    paddingHorizontal: SPACING.base, paddingBottom: SPACING.sm,
+  },
+  langChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
     borderWidth: 1.5, borderColor: COLORS.border, borderRadius: RADIUS.full,
-    paddingVertical: 5, paddingHorizontal: SPACING.sm, backgroundColor: COLORS.background,
+    paddingVertical: 7, paddingHorizontal: SPACING.sm, backgroundColor: COLORS.background,
   },
-  langSuggestChipActive: { borderColor: COLORS.primary, backgroundColor: '#EDE9FE' },
-  langSuggestFlag: { fontSize: 16 },
-  langSuggestName: { fontSize: FONTS.sizes.xs, fontWeight: '600', color: COLORS.textSecondary },
-  langSuggestNameActive: { color: COLORS.primary },
-  langApplyBtn: {
-    backgroundColor: COLORS.primary, borderRadius: RADIUS.lg, padding: SPACING.sm,
-    alignItems: 'center', flexDirection: 'row', justifyContent: 'center',
-  },
-  langApplyBtnDisabled: { opacity: 0.4 },
-  langApplyBtnText: { color: COLORS.white, fontWeight: '700', fontSize: FONTS.sizes.sm },
-  langHint: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, textAlign: 'center', lineHeight: 15 },
+  langChipActive: { borderColor: COLORS.primary, backgroundColor: '#EDE9FE' },
+  langChipFlag: { fontSize: 18 },
+  langChipName: { fontSize: FONTS.sizes.sm, fontWeight: '600', color: COLORS.textSecondary },
+  langChipNameActive: { color: COLORS.primary },
+  langHint: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, paddingHorizontal: SPACING.base, paddingBottom: SPACING.sm, lineHeight: 16 },
   logoutBtn: {
     marginHorizontal: SPACING.xl, marginTop: SPACING.md, padding: SPACING.base,
     borderRadius: RADIUS.lg, backgroundColor: '#FEF2F2', alignItems: 'center',
