@@ -422,8 +422,8 @@ export default function DiscoverScreen() {
               <TouchableOpacity style={styles.suggestCta} onPress={() => setShowSuggest(true)} activeOpacity={0.85}>
                 <Text style={styles.suggestCtaEmoji}>🔍</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.suggestCtaTitle}>¿Conocés una fuente de audiciones?</Text>
-                  <Text style={styles.suggestCtaSub}>Sugerí un sitio, Instagram o grupo y lo sumamos</Text>
+                  <Text style={styles.suggestCtaTitle}>¿Encontraste una audición?</Text>
+                  <Text style={styles.suggestCtaSub}>Mandala a artnetcircus@gmail.com o sugerí la fuente y la sumamos al feed</Text>
                 </View>
                 <Text style={styles.suggestCtaArrow}>→</Text>
               </TouchableOpacity>

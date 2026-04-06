@@ -1,6 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import i18n from '../i18n';
 import es from '../i18n/locales/es';
+import en from '../i18n/locales/en';
+import fr from '../i18n/locales/fr';
+
+/** Maps common display-name variations to a pre-built i18n language code */
+const PREBUILT: Record<string, string> = {
+  english: 'en', inglés: 'en', ingles: 'en',
+  français: 'fr', francais: 'fr', french: 'fr', frances: 'fr', francés: 'fr',
+};
 
 const GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_KEY ?? '';
 
@@ -70,6 +78,16 @@ export async function loadLanguageBundle(langName: string): Promise<boolean> {
   if (isSpanish) {
     i18n.changeLanguage('es');
     await AsyncStorage.setItem('artnet_language', 'Español').catch(() => {});
+    return true;
+  }
+
+  // Use pre-built bundles for English and French — no Groq needed
+  const prebuiltCode = PREBUILT[name.toLowerCase()];
+  if (prebuiltCode) {
+    const bundle = prebuiltCode === 'en' ? en : fr;
+    i18n.addResourceBundle(prebuiltCode, 'translation', bundle, true, true);
+    i18n.changeLanguage(prebuiltCode);
+    await AsyncStorage.setItem('artnet_language', name).catch(() => {});
     return true;
   }
 
