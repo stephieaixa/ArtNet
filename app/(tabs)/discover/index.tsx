@@ -301,7 +301,7 @@ export default function DiscoverScreen() {
           </TouchableOpacity>
           <View style={styles.communityDivider} />
           <View style={styles.communityShareRow}>
-            <Text style={styles.communityMailText}>¿Encontraste una audición? También podés enviarla a </Text>
+            <Text style={styles.communityMailText}>¿Encontraste una audición? Podés enviarla a</Text>
             <TouchableOpacity
               onPress={() => {
                 const subject = encodeURIComponent('Nueva audición para ArtNet');
