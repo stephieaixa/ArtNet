@@ -297,15 +297,21 @@ export default function ProfileScreen() {
               autoFocus
               autoCapitalize="words"
             />
-            {/* Quick suggestions */}
+            {/* Quick suggestions — tap to apply directly */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langSuggestScroll}>
               <View style={styles.langSuggestRow}>
                 {LANG_SUGGESTIONS.map(l => (
                   <TouchableOpacity
                     key={l.name}
                     style={[styles.langSuggestChip, targetLanguage === l.name && styles.langSuggestChipActive]}
-                    onPress={() => setLangInput(l.name)}
+                    onPress={async () => {
+                      setLangInput(l.name);
+                      setEditingLang(false);
+                      const ok = await setTargetLanguage(l.name);
+                      if (!ok) Alert.alert('Error', 'No se pudo traducir. Verificá tu conexión.');
+                    }}
                     activeOpacity={0.75}
+                    disabled={isTranslating}
                   >
                     <Text style={styles.langSuggestFlag}>{l.flag}</Text>
                     <Text style={[styles.langSuggestName, targetLanguage === l.name && styles.langSuggestNameActive]}>{l.name}</Text>
@@ -318,7 +324,8 @@ export default function ProfileScreen() {
               onPress={async () => {
                 const name = langInput.trim() || 'Español';
                 setEditingLang(false);
-                await setTargetLanguage(name);
+                const ok = await setTargetLanguage(name);
+                if (!ok) Alert.alert('Error', 'No se pudo traducir. Verificá tu conexión.');
               }}
               disabled={!langInput.trim() || isTranslating}
               activeOpacity={0.85}
@@ -328,7 +335,7 @@ export default function ProfileScreen() {
                 : <Text style={styles.langApplyBtnText}>Aplicar idioma →</Text>
               }
             </TouchableOpacity>
-            <Text style={styles.langHint}>La IA traduce toda la interfaz. Solo se traduce una vez por idioma.</Text>
+            <Text style={styles.langHint}>La IA traduce toda la interfaz una vez por idioma.</Text>
           </View>
         )}
       </View>
