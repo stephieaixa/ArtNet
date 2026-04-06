@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from 'react-i18next';
-import { supabase } from '../../../src/services/supabase';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../../src/services/supabase';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useLanguageStore } from '../../../src/stores/languageStore';
 import { COLORS, FONTS, SPACING, RADIUS, HEADER_TOP } from '../../../src/constants/theme';
@@ -74,31 +74,37 @@ export default function ProfileScreen() {
     setUploadingAvatar(true);
     try {
       const asset = result.assets[0];
-      const ext = asset.uri.split('.').pop() ?? 'jpg';
+      // Derive ext from mimeType (safe for blob URLs on web)
+      const mime = asset.mimeType ?? 'image/jpeg';
+      let ext = mime.split('/')[1] ?? 'jpg';
+      if (ext === 'jpeg') ext = 'jpg';
+      const contentType = `image/${ext}`;
       const fileName = `${user!.id}/avatar.${ext}`;
 
-      const response = await fetch(asset.uri);
-      const arrayBuffer = await response.arrayBuffer();
-
-      const { error: uploadError } = await supabase.storage
-        .from('Avatars')
-        .upload(fileName, arrayBuffer, {
-          contentType: `image/${ext}`,
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
+      // Upload direct via REST API — most reliable on iOS Safari web
+      const fileRes = await fetch(asset.uri);
+      const blob = await fileRes.blob();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? SUPABASE_ANON_KEY;
+      const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/Avatars/${fileName}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: SUPABASE_ANON_KEY,
+          'Content-Type': contentType,
+          'x-upsert': 'true',
+        },
+        body: blob,
+      });
+      if (!uploadRes.ok) throw new Error(await uploadRes.text());
 
       const { data } = supabase.storage.from('Avatars').getPublicUrl(fileName);
-
-      // Agregar timestamp para evitar caché
       const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
-
       await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
       setUser({ ...user!, avatar_url: avatarUrl });
     } catch (err: any) {
-      Alert.alert(t('common.error'), t('profile.photoError'));
-      console.error('[avatar] Upload error:', err.message);
+      Alert.alert(t('common.error'), err?.message ?? t('profile.photoError'));
+      console.error('[avatar] Upload error:', err);
     }
     setUploadingAvatar(false);
   }

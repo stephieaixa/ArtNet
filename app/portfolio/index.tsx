@@ -206,13 +206,22 @@ export default function PortfolioScreen() {
 
         if (result.status >= 300) throw new Error(`Upload failed: ${result.body}`);
       } else {
-        // Fotos, documentos y videos en web: usar Blob (más compatible con Supabase en web)
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        const { error } = await supabase.storage
-          .from('Portfolio')
-          .upload(fileName, blob, { contentType, upsert: false });
-        if (error) throw error;
+        // Fotos, docs y videos en web: upload directo via REST API (más confiable en iOS Safari)
+        const fileRes = await fetch(uri);
+        const blob = await fileRes.blob();
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token ?? SUPABASE_ANON_KEY;
+        const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/Portfolio/${fileName}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_ANON_KEY,
+            'Content-Type': contentType,
+            'x-upsert': 'false',
+          },
+          body: blob,
+        });
+        if (!uploadRes.ok) throw new Error(await uploadRes.text());
       }
 
       const { data: urlData } = supabase.storage.from('Portfolio').getPublicUrl(fileName);
