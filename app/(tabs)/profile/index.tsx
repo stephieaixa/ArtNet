@@ -345,6 +345,11 @@ export default function ProfileScreen() {
       </TouchableOpacity>
 
       <Text style={styles.version}>{t('profile.version')}</Text>
+
+      <TouchableOpacity style={styles.poweredBy} onPress={() => Linking.openURL('https://the.tat.rocks/')} activeOpacity={0.7}>
+        <Text style={styles.poweredByText}>Powered by</Text>
+        <Image source={require('../../../assets/tat-logo.png')} style={styles.poweredByLogo} resizeMode="contain" />
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -438,4 +443,7 @@ const styles = StyleSheet.create({
   },
   logoutText: { fontSize: FONTS.sizes.base, color: COLORS.error, fontWeight: '700' },
   version: { textAlign: 'center', fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: SPACING.xl },
+  poweredBy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: SPACING.sm, marginBottom: SPACING.xl },
+  poweredByText: { fontSize: 10, color: COLORS.textMuted },
+  poweredByLogo: { width: 20, height: 20 },
 });
