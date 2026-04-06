@@ -32,6 +32,7 @@ export const DISCIPLINES: Discipline[] = [
   { id: 'aerial_straps',  label: 'Cintas',                   category: 'Aéreo',          genre: 'aerial' },
   { id: 'aerial_rope',    label: 'Cuerda / Cuerda Lisa',     category: 'Aéreo',          genre: 'aerial' },
   { id: 'aerial_cube',    label: 'Cubo Aéreo',               category: 'Aéreo',          genre: 'aerial' },
+  { id: 'hair_suspension', label: 'Suspensión Capilar',      category: 'Aéreo',          genre: 'aerial' },
   { id: 'chinese_pole',   label: 'Palo Chino',               category: 'Aéreo',          genre: 'aerial' },
   { id: 'russian_bar',    label: 'Barra Rusa',               category: 'Aéreo',          genre: 'aerial' },
 
@@ -70,8 +71,9 @@ export const DISCIPLINES: Discipline[] = [
   { id: 'glow',      label: 'Glow / Neón',           category: 'LED & Luminoso', genre: 'led' },
 
   // ── Equilibrismo ──────────────────────────────────────
-  { id: 'tightrope', label: 'Cuerda Floja / Slackline', category: 'Equilibrismo', genre: 'equilibrium' },
-  { id: 'unicycle',  label: 'Monociclo',                category: 'Equilibrismo', genre: 'equilibrium' },
+  { id: 'tightrope',       label: 'Cuerda Floja / Slackline', category: 'Equilibrismo', genre: 'equilibrium' },
+  { id: 'unicycle',        label: 'Monociclo',                category: 'Equilibrismo', genre: 'equilibrium' },
+  { id: 'bottle_balance',  label: 'Equilibrio en Botellas',   category: 'Equilibrismo', genre: 'equilibrium' },
 
   // ── Clown & Comedia ───────────────────────────────────
   { id: 'clown',          label: 'Clown',           category: 'Clown & Comedia', genre: 'clown' },

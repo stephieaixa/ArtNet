@@ -14,6 +14,7 @@ import { runWebScraper } from './sources/scrapeWeb.js';
 import { runTelegramScraper } from './sources/telegram.js';
 import { runGoogleSearchScraper } from './sources/googleSearch.js';
 import { getStats } from './db.js';
+import { runEnrichment } from './enrich.js';
 
 const INTERVAL_HOURS = parseFloat(process.env.SCRAPE_INTERVAL_HOURS ?? '6');
 const RUN_ONCE = process.argv.includes('--once');
@@ -69,7 +70,14 @@ async function runAll() {
     console.log('        Seguí las instrucciones en scraper/.env.example para activarlo');
   }
 
-  // 3. Stats finales
+  // 4. Enriquecimiento de empresas (busca web oficial, casting email, etc.)
+  try {
+    await runEnrichment();
+  } catch (err) {
+    console.error('[main] Error en enriquecimiento:', err.message);
+  }
+
+  // 5. Stats finales
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   const stats = await getStats();
 

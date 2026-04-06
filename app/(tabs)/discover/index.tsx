@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../../src/stores/authStore';
+import { useDiscoverStore } from '../../../src/stores/discoverStore';
 import { COLORS, FONTS, SPACING, RADIUS, HEADER_TOP } from '../../../src/constants/theme';
 import { VENUE_TYPES } from '../../../src/constants/venueTypes';
 import { DISCIPLINES } from '../../../src/constants/disciplines';
@@ -160,11 +161,10 @@ function adaptScrapedJob(j: ScrapedJob): JobPost {
 export default function DiscoverScreen() {
   const { t } = useTranslation();
   const { user } = useAuthStore();
-  const [search, setSearch] = useState('');
+  const { filters, search, setFilters, setSearch } = useDiscoverStore();
   const [showFilters, setShowFilters] = useState(false);
   const [showFabMenu, setShowFabMenu] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
-  const [filters, setFilters] = useState<FilterState>({ venueTypes: [], regions: [], countries: [], genres: [], disciplines: [] });
   const [liveJobs, setLiveJobs] = useState<JobPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [selecting, setSelecting] = useState(false);

@@ -11,12 +11,12 @@ import Groq from 'groq-sdk';
 
 // ─── Lista canónica de disciplinas de la app ──────────────────────────────────
 const DISCIPLINES_LIST = `
-AÉREO: aerial_silk (Tela), aerial_hoop (Aro/Lyra), aerial_trapeze (Trapecio), aerial_straps (Cintas), aerial_rope (Cuerda/Cuerda Lisa), aerial_cube (Cubo Aéreo), chinese_pole (Palo Chino), russian_bar (Barra Rusa)
+AÉREO: aerial_silk (Tela), aerial_hoop (Aro/Lyra), aerial_trapeze (Trapecio), aerial_straps (Cintas), aerial_rope (Cuerda/Cuerda Lisa), aerial_cube (Cubo Aéreo), hair_suspension (Suspensión Capilar/Hair Suspension), chinese_pole (Palo Chino), russian_bar (Barra Rusa)
 ACROBACIA DE PISO: acrobatics (Acrobacia), partner_acrobatics (Acrobacia Dúo/Portor), contortion (Contorsionismo), hand_balance (Verticalista), banquine (Banquina), teeterboard (Balancín/Trampolín), wheel_of_death (Rueda de la Muerte), rola_bola (Rola Bola), cyr_wheel (Rueda Cyr/German Wheel)
 MANIPULACIÓN: juggling (Malabares), poi (Poi), staff (Staff/Bastón), hula_hoop (Hula Hoop), diabolo (Diábolo), kendama (Kendama/Yo-yo)
 FUEGO: fire_poi (Poi de Fuego), fire_staff (Staff de Fuego), fire_juggling (Malabares con Fuego), fire_hoop (Hula Hoop de Fuego), fire_eating (Tragafuegos)
 LED/LUMINOSO: led_poi (Poi LED), led_staff (Staff LED), led_hoop (Hula Hoop LED), led_suit (Traje LED), led_show (Show LED/Luminoso), glow (Glow/Neón)
-EQUILIBRISMO: tightrope (Cuerda Floja/Slackline), unicycle (Monociclo)
+EQUILIBRISMO: tightrope (Cuerda Floja/Slackline), unicycle (Monociclo), bottle_balance (Equilibrio en Botellas/Bottle Balance)
 CLOWN & COMEDIA: clown (Clown), mime (Mimo), bouffon (Bufón/Bouffon), physical_comedy (Comedia Física)
 PERSONAJE & CALLE: stilt_walking (Zancos), living_statue (Estatua Viviente), street_show (Espectáculo Callejero)
 PRODUCCIÓN: spectacle_direction (Dirección de Espectáculos), choreography (Coreografía), stage_management (Producción/Stage Manager)
