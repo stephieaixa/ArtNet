@@ -17,7 +17,7 @@ import { fetchJobs, type ScrapedJob } from '../../../src/services/jobs';
 import { supabase } from '../../../src/services/supabase';
 import type { JobPost } from '../../../src/types';
 
-const ADMIN_EMAIL = 'circusworldlife@gmail.com';
+const ADMIN_EMAIL = 'artnetcircus@gmail.com';
 
 
 

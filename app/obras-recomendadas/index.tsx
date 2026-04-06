@@ -288,14 +288,8 @@ export default function ObrasRecomendadasScreen({ isTab = false }: { isTab?: boo
 
     return (
       <TouchableOpacity style={styles.card} onPress={() => Linking.openURL(item.url)} activeOpacity={0.88}>
-        {/* Thumbnail */}
-        {thumb ? (
-          <Image source={{ uri: thumb }} style={styles.cardThumb} resizeMode="cover" />
-        ) : (
-          <View style={styles.cardThumbPlaceholder}>
-            <Text style={styles.cardThumbEmoji}>{typeEmoji(item.type)}</Text>
-          </View>
-        )}
+        {/* Thumbnail — solo si existe */}
+        {thumb && <Image source={{ uri: thumb }} style={styles.cardThumb} resizeMode="cover" />}
 
         {/* Badges row */}
         <View style={styles.badgeRow}>

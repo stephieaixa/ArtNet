@@ -251,7 +251,6 @@ export default function ProfileScreen() {
         <Text style={styles.sectionTitle}>{t('profile.support')}</Text>
         {[
           { emoji: '❓', label: t('profile.helpFaq'),    action: () => Alert.alert(t('common.comingSoon')) },
-          { emoji: '📣', label: t('profile.suggestions'), action: () => router.push('/sources/suggest') },
           { emoji: '💡', label: t('profile.appFeedback'), action: () => router.push('/feedback') },
           {
             emoji: '🔗',
