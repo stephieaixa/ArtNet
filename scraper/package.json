@@ -1,0 +1,24 @@
+{
+  "name": "artnet-scraper",
+  "version": "1.0.0",
+  "description": "Aggregator de trabajos de circo y artes escénicas",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "telegram": "node sources/telegram.js",
+    "web": "node sources/websites.js",
+    "once": "node index.js --once"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.49.4",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7",
+    "groq-sdk": "^1.1.2",
+    "input": "^1.0.1",
+    "node-fetch": "^3.3.2",
+    "telegram": "^2.26.16"
+  }
+}

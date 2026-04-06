@@ -1,19 +1,22 @@
 {
   "expo": {
-    "name": "artelynk",
-    "slug": "artelynk",
+    "name": "ArtNet",
+    "slug": "artnet",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#6C3CE1"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.artnet.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,10 +24,50 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.artnet.app"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "manifest": {
+        "name": "ArtNet — Trabajos de Circo",
+        "short_name": "ArtNet",
+        "description": "Plataforma de trabajos para artistas de circo, acrobacia y varieté",
+        "theme_color": "#6C3CE1",
+        "background_color": "#F5F3FF",
+        "display": "standalone",
+        "share_target": {
+          "action": "/post/share",
+          "method": "GET",
+          "params": {
+            "title": "title",
+            "text": "text",
+            "url": "url"
+          }
+        }
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "scheme": "artnet",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "079fd09e-cbc8-4698-af8a-2e3d53264235"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/079fd09e-cbc8-4698-af8a-2e3d53264235"
     }
   }
 }

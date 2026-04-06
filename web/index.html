@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+    <title>ArtNet</title>
+    <style>
+      /*
+       * Prevent iOS Safari from auto-zooming when focusing inputs.
+       * Safari zooms when font-size < 16px; forcing a minimum of 16px fixes it
+       * without disabling user zoom (which would hurt accessibility).
+       */
+      input,
+      textarea,
+      select {
+        font-size: max(16px, 1em) !important;
+      }
+    </style>
+    <%- htmlWebpackPlugin.tags.headTags %>
+  </head>
+  <body>
+    <div id="root"></div>
+    <%- htmlWebpackPlugin.tags.bodyTags %>
+  </body>
+</html>
