@@ -9,6 +9,7 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
 type Props = {
   visible: boolean;
   onClose: () => void;
+  jobId?: string;
   title: string;
   venueName?: string;
   city?: string;
@@ -20,8 +21,10 @@ type Props = {
   flyerUrl?: string | null;
 };
 
+const APP_URL = 'https://artnet-circus.vercel.app';
+
 function buildShareText(props: Props): string {
-  const { title, venueName, city, country, startDate, deadline, payInfo, description } = props;
+  const { jobId, title, venueName, city, country, startDate, deadline, payInfo, description } = props;
   const lines: string[] = [];
 
   lines.push(`🎪 *${title}*`);
@@ -31,7 +34,8 @@ function buildShareText(props: Props): string {
   if (deadline) lines.push(`⏰ Deadline: ${deadline}`);
   if (payInfo) lines.push(`💰 ${payInfo}`);
   if (description) lines.push(`\n${description.slice(0, 200)}${description.length > 200 ? '...' : ''}`);
-  lines.push('\n📲 Publicado en ArtNet – la app de trabajos para artistas escénicos');
+  const link = jobId ? `${APP_URL}/jobs/${jobId}` : APP_URL;
+  lines.push(`\n🔗 Ver en ArtNet: ${link}`);
 
   return lines.join('\n');
 }

@@ -128,6 +128,7 @@ export default function FlyerPostScreen() {
   const [publishedFlyerUrl, setPublishedFlyerUrl] = useState<string | null>(null);
   const [wasCropped, setWasCropped] = useState(false);
   const [cropping, setCropping] = useState(false);
+  const [awaitingCrop, setAwaitingCrop] = useState(false);
 
   // Editable fields after extraction
   const [title, setTitle] = useState('');
@@ -171,8 +172,31 @@ export default function FlyerPostScreen() {
         ? (await ImageManipulator.manipulateAsync(croppedUri, [], { base64: true, format: ImageManipulator.SaveFormat.JPEG })).base64 ?? ''
         : asset.base64 ?? '';
       setImageBase64(finalBase64);
-      analyzeFlyer(finalBase64);
+      setAwaitingCrop(true);
     }
+  };
+
+  const handleManualRecrop = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      quality: 1.0,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setImage(asset.uri);
+      setImageBase64(asset.base64 ?? '');
+      setWasCropped(false);
+      setAwaitingCrop(true);
+    }
+  };
+
+  const handleProceedAnalyze = () => {
+    setAwaitingCrop(false);
+    analyzeFlyer(imageBase64);
   };
 
   const takePhoto = async () => {
@@ -395,12 +419,27 @@ Respondé ÚNICAMENTE con el JSON (sin markdown, sin bloques de código):
                 )}
               </View>
 
+              {awaitingCrop && !analyzing && (
+                <View style={styles.cropActionCard}>
+                  <Text style={styles.cropActionTitle}>¿Cómo está la imagen?</Text>
+                  <Text style={styles.cropActionSubtitle}>Podés recortar para quedarte solo con el flyer, o analizarla tal como está.</Text>
+                  <View style={styles.cropActionRow}>
+                    <TouchableOpacity style={styles.cropActionBtnSecondary} onPress={handleManualRecrop}>
+                      <Text style={styles.cropActionBtnSecondaryText}>✂️ Recortar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.cropActionBtnPrimary} onPress={handleProceedAnalyze}>
+                      <Text style={styles.cropActionBtnPrimaryText}>🔍 Analizar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {analyzing ? (
                 <View style={styles.analyzingCard}>
                   <ActivityIndicator color={COLORS.primary} />
                   <Text style={styles.analyzingText}>{t('flyer.analyzing')}</Text>
                 </View>
-              ) : !extracted ? (
+              ) : !extracted && !awaitingCrop ? (
                 <TouchableOpacity style={styles.manualBtn} onPress={showManualForm}>
                   <Text style={styles.manualBtnText}>{t('flyer.fillManually')}</Text>
                 </TouchableOpacity>
@@ -533,6 +572,29 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start', margin: SPACING.sm,
   },
   cropBadgeText: { color: COLORS.white, fontSize: FONTS.sizes.xs, fontWeight: '600' },
+  cropActionCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.base,
+    marginTop: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  cropActionTitle: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text, marginBottom: 4 },
+  cropActionSubtitle: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, marginBottom: SPACING.sm },
+  cropActionRow: { flexDirection: 'row', gap: SPACING.sm },
+  cropActionBtnSecondary: {
+    flex: 1, borderWidth: 1.5, borderColor: COLORS.border,
+    borderRadius: RADIUS.lg, paddingVertical: SPACING.sm,
+    alignItems: 'center',
+  },
+  cropActionBtnSecondaryText: { fontSize: FONTS.sizes.sm, color: COLORS.text, fontWeight: '600' },
+  cropActionBtnPrimary: {
+    flex: 1, backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.lg, paddingVertical: SPACING.sm,
+    alignItems: 'center',
+  },
+  cropActionBtnPrimaryText: { fontSize: FONTS.sizes.sm, color: COLORS.white, fontWeight: '700' },
   analyzingCard: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.base, marginBottom: SPACING.base },
   analyzingText: { fontSize: FONTS.sizes.base, color: COLORS.text, fontWeight: '500' },
   extractedCard: { backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: SPACING.base, gap: SPACING.xs, borderWidth: 1, borderColor: COLORS.borderLight },

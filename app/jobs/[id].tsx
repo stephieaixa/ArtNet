@@ -59,6 +59,7 @@ export default function JobDetailScreen() {
   const [coverMessage, setCoverMessage] = useState('');
   const [appliedStatus, setAppliedStatus] = useState<ApplicationStatus | null>(null);
   const [applying, setApplying] = useState(false);
+  const [generatingCover, setGeneratingCover] = useState(false);
   const { targetLanguage } = useLanguageStore();
   const isDefaultLang = targetLanguage === 'Español';
   const [translating, setTranslating] = useState(false);
@@ -138,6 +139,66 @@ export default function JobDetailScreen() {
     Clipboard.setString(buildPortfolioText());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function generateCoverLetter() {
+    if (!job) return;
+    const GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_KEY;
+    if (!GROQ_KEY) { Alert.alert('Error', 'No hay clave de IA configurada.'); return; }
+
+    const name = profile?.display_name || user?.email?.split('@')[0] || 'el/la artista';
+    const discLabels = (profile?.disciplines ?? [])
+      .map((d: string) => DISCIPLINES.find(x => x.id === d)?.label ?? d)
+      .join(', ');
+    const location = [profile?.city, profile?.country].filter(Boolean).join(', ');
+    const socials = [
+      profile?.instagram_handle ? `Instagram: @${profile.instagram_handle}` : '',
+      profile?.youtube_url ? `YouTube: ${profile.youtube_url}` : '',
+      profile?.website_url ? `Web: ${profile.website_url}` : '',
+    ].filter(Boolean).join(' | ');
+
+    const langInstruction = targetLanguage && targetLanguage !== 'Español'
+      ? `Write the letter in ${targetLanguage}.`
+      : 'Escribí la carta en español rioplatense.';
+
+    const prompt = `Sos un artista de circo y artes escénicas que se postula a una convocatoria. ${langInstruction}
+
+CONVOCATORIA:
+Título: ${job.title}
+${job.venue_name ? `Lugar: ${job.venue_name}` : ''}
+${job.location_city || job.location_country ? `Ubicación: ${[job.location_city, job.location_country].filter(Boolean).join(', ')}` : ''}
+${job.description ? `Descripción: ${job.description.slice(0, 600)}` : ''}
+
+ARTISTA:
+Nombre: ${name}
+${discLabels ? `Disciplinas: ${discLabels}` : ''}
+${location ? `Ubicación: ${location}` : ''}
+${profile?.bio ? `Bio: ${profile.bio}` : ''}
+${socials ? `Contacto/Portfolio: ${socials}` : ''}
+
+Redactá una carta de presentación breve y profesional (3-4 párrafos) para esta convocatoria de circo/artes escénicas. Debe sonar humana, apasionada y directa. No uses frases genéricas. Adaptá el tono al tipo de convocatoria. Solo devolvé el texto de la carta, sin explicaciones ni título.`;
+
+    setGeneratingCover(true);
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 600,
+          temperature: 0.75,
+        }),
+      });
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content?.trim();
+      if (text) setCoverMessage(text);
+      else Alert.alert('Error', 'No se pudo generar el texto. Intentá de nuevo.');
+    } catch {
+      Alert.alert('Error', 'No se pudo conectar con la IA.');
+    } finally {
+      setGeneratingCover(false);
+    }
   }
 
   async function handleInAppApply() {
@@ -220,7 +281,7 @@ export default function JobDetailScreen() {
     if (job.deadline) lines.push(`⏰ Deadline: ${job.deadline}`);
     if (job.pay_info) lines.push(`💰 ${job.pay_info}`);
     if (job.description) lines.push(`\n${job.description.slice(0, 200)}${job.description.length > 200 ? '...' : ''}`);
-    lines.push('\n📲 Vía ArtNet – trabajos para artistas escénicos');
+    lines.push(`\n🔗 Ver en ArtNet: https://artnet-circus.vercel.app/jobs/${job.id}`);
     const text = lines.join('\n');
     Share.share({ message: text, ...(job.flyer_url ? { url: job.flyer_url } : {}) });
   };
@@ -449,13 +510,24 @@ export default function JobDetailScreen() {
                   </View>
                 ) : (
                   <>
+                    <TouchableOpacity
+                      style={[styles.aiGenerateBtn, generatingCover && { opacity: 0.6 }]}
+                      onPress={generateCoverLetter}
+                      disabled={generatingCover}
+                      activeOpacity={0.8}
+                    >
+                      {generatingCover
+                        ? <><ActivityIndicator color={COLORS.primary} size="small" /><Text style={styles.aiGenerateBtnText}> Generando...</Text></>
+                        : <Text style={styles.aiGenerateBtnText}>✨ Generar carta con IA</Text>
+                      }
+                    </TouchableOpacity>
                     <TextInput
                       style={[styles.input, styles.inputMulti]}
                       placeholder="Mensaje de presentación (opcional)"
                       value={coverMessage}
                       onChangeText={setCoverMessage}
                       multiline
-                      numberOfLines={3}
+                      numberOfLines={5}
                     />
                     <TouchableOpacity
                       style={[styles.inAppApplyBtn, applying && { opacity: 0.6 }]}
@@ -640,6 +712,13 @@ const styles = StyleSheet.create({
   applyEmailSub: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, marginTop: 2 },
   portfolioBox: { backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.base, borderWidth: 1, borderColor: COLORS.borderLight, marginBottom: SPACING.sm },
   portfolioText: { fontSize: FONTS.sizes.sm, color: COLORS.text, lineHeight: 20 },
+  aiGenerateBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: COLORS.primary, borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.base,
+    marginBottom: SPACING.sm, backgroundColor: '#EDE9FE',
+  },
+  aiGenerateBtnText: { fontSize: FONTS.sizes.sm, color: COLORS.primary, fontWeight: '700' },
   copyBtn: { backgroundColor: COLORS.primary, borderRadius: RADIUS.lg, padding: SPACING.base, alignItems: 'center', marginBottom: SPACING.sm },
   copyBtnText: { color: COLORS.white, fontWeight: '700', fontSize: FONTS.sizes.base },
   profileTip: { fontSize: FONTS.sizes.sm, color: COLORS.primary, textAlign: 'center', lineHeight: 18, marginTop: SPACING.sm },
