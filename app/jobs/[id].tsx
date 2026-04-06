@@ -61,6 +61,7 @@ export default function JobDetailScreen() {
   const [appliedStatus, setAppliedStatus] = useState<ApplicationStatus | null>(null);
   const [applying, setApplying] = useState(false);
   const [generatingCover, setGeneratingCover] = useState(false);
+  const [generatingEmail, setGeneratingEmail] = useState<string | null>(null);
   const { targetLanguage } = useLanguageStore();
   const isDefaultLang = targetLanguage === 'Español';
   const [translating, setTranslating] = useState(false);
@@ -221,9 +222,74 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
     Alert.alert('¡Postulación enviada!', 'Te avisamos cuando el publicador responda.');
   }
 
-  function openMailWithPortfolio(email: string) {
-    const subject = encodeURIComponent(`Postulación: ${job?.title ?? ''}`);
-    const body = encodeURIComponent(`Hola,\n\nMe interesa postularme para "${job?.title}".\n\n${buildPortfolioText()}\n\nQuedo a disposición.\nSaludos`);
+  async function openMailWithPortfolio(email: string) {
+    if (!job) return;
+    const GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_KEY;
+
+    if (GROQ_KEY) {
+      setGeneratingEmail(email);
+      try {
+        const name = profile?.display_name || user?.email?.split('@')[0] || 'el/la artista';
+        const discLabels = (profile?.disciplines ?? [])
+          .map((d: string) => DISCIPLINES.find(x => x.id === d)?.label ?? d)
+          .join(', ');
+        const location = [profile?.city, profile?.country].filter(Boolean).join(', ');
+        const socials = [
+          profile?.instagram_handle ? `Instagram: @${profile.instagram_handle}` : '',
+          profile?.youtube_url ? `YouTube: ${profile.youtube_url}` : '',
+          profile?.website_url ? `Web: ${profile.website_url}` : '',
+        ].filter(Boolean).join(' | ');
+
+        const langInstruction = targetLanguage && targetLanguage !== 'Español'
+          ? `Write the email in ${targetLanguage}.`
+          : 'Escribí el email en español rioplatense.';
+
+        const prompt = `Sos un artista de circo que se postula por email a una convocatoria. ${langInstruction}
+
+CONVOCATORIA:
+Título: ${job.title}
+${job.venue_name ? `Empresa/Lugar: ${job.venue_name}` : ''}
+${job.location_city || job.location_country ? `Ubicación: ${[job.location_city, job.location_country].filter(Boolean).join(', ')}` : ''}
+${job.description ? `Descripción: ${job.description.slice(0, 500)}` : ''}
+${(job.requirements ?? []).length ? `Requisitos específicos: ${job.requirements!.join(', ')}` : ''}
+
+ARTISTA:
+Nombre: ${name}
+${discLabels ? `Disciplinas: ${discLabels}` : ''}
+${location ? `Ubicación: ${location}` : ''}
+${profile?.bio ? `Bio: ${profile.bio}` : ''}
+${socials ? `Contacto/Portfolio: ${socials}` : ''}
+
+Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá el tono a la empresa. Mencioná específicamente qué del perfil del artista encaja con esta convocatoria. Solo devolvé el texto del email, sin asunto ni título.`;
+
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 500,
+            temperature: 0.7,
+          }),
+        });
+        const data = await res.json();
+        const aiText = data.choices?.[0]?.message?.content?.trim();
+        if (aiText) {
+          const subject = encodeURIComponent(`Postulación: ${job.title}`);
+          const body = encodeURIComponent(`${aiText}\n\n---\n${buildPortfolioText()}`);
+          Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
+          return;
+        }
+      } catch {
+        // fall through to template
+      } finally {
+        setGeneratingEmail(null);
+      }
+    }
+
+    // Fallback: generic template
+    const subject = encodeURIComponent(`Postulación: ${job.title}`);
+    const body = encodeURIComponent(`Hola,\n\nMe interesa postularme para "${job.title}".\n\n${buildPortfolioText()}\n\nQuedo a disposición.\nSaludos`);
     Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
   }
 
@@ -459,8 +525,8 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
           </>
         )}
 
-        {/* Source link at bottom */}
-        {job.source_url && (
+        {/* Source link at bottom — only if different from contact_url */}
+        {job.source_url && job.source_url !== job.contact_url && (
           <TouchableOpacity style={styles.sourceLinkBtn} onPress={() => Linking.openURL(job.source_url!)} activeOpacity={0.7}>
             <Text style={styles.sourceLinkText}>🔗 {t('job.viewSource')}</Text>
           </TouchableOpacity>
@@ -569,11 +635,21 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
                 {contactEmails.map(email => (
                   <TouchableOpacity
                     key={email}
-                    style={styles.applyEmailBtn}
+                    style={[styles.applyEmailBtn, generatingEmail === email && { opacity: 0.6 }]}
                     onPress={() => openMailWithPortfolio(email)}
+                    disabled={generatingEmail !== null}
                   >
-                    <Text style={styles.applyEmailText}>{email}</Text>
-                    <Text style={styles.applyEmailSub}>Abre tu app de correo con tu portfolio incluido</Text>
+                    {generatingEmail === email ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <ActivityIndicator color={COLORS.primary} size="small" />
+                        <Text style={styles.applyEmailSub}>Personalizando con IA...</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <Text style={styles.applyEmailText}>{email}</Text>
+                        <Text style={styles.applyEmailSub}>✨ Email personalizado con IA según tu portfolio</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 ))}
               </>

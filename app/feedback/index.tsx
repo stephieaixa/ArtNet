@@ -60,7 +60,7 @@ export default function FeedbackScreen() {
         <TouchableOpacity style={styles.doneBtn} onPress={() => { setDone(false); setMessage(''); setCategory('feature'); }}>
           <Text style={styles.doneBtnText}>Enviar otro</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backLink} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile')}>
           <Text style={styles.backLinkText}>← Volver</Text>
         </TouchableOpacity>
       </View>
@@ -73,7 +73,7 @@ export default function FeedbackScreen() {
         <StatusBar style="dark" />
 
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile')} style={styles.backBtn}>
             <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Sugerencias para la app</Text>

@@ -132,7 +132,7 @@ export default function AlertsScreen() {
     <View style={s.container}>
       <StatusBar style="dark" />
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile')} style={s.backBtn}>
           <Text style={s.backText}>←</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Mis alertas</Text>

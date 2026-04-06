@@ -162,18 +162,34 @@ export default function PortfolioScreen() {
   }
 
   // ── Upload file ───────────────────────────────────────
-  async function uploadFile(uri: string, type: ItemType, nameOverride?: string) {
-    const ext = uri.split('?')[0].split('.').pop()?.toLowerCase()
-      ?? (type === 'video' ? 'mp4' : type === 'document' ? 'pdf' : 'jpg');
+  async function uploadFile(uri: string, type: ItemType, nameOverride?: string, mimeType?: string) {
+    // Derive extension and content-type from mimeType when available (reliable on web blob URLs)
+    let ext: string;
+    let contentType: string;
+
+    if (mimeType) {
+      contentType = mimeType;
+      ext = mimeType.split('/')[1]?.split(';')[0] ?? '';
+      if (ext === 'jpeg') ext = 'jpg';
+      if (ext === 'quicktime') ext = 'mov';
+    } else {
+      const rawExt = uri.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+      // If it looks like a URL path fragment (blob URL, etc.) use type default
+      ext = rawExt.length <= 5 && !rawExt.includes('/') && !rawExt.includes(':')
+        ? rawExt
+        : (type === 'video' ? 'mp4' : type === 'document' ? 'pdf' : 'jpg');
+      contentType =
+        type === 'video'    ? `video/${ext}` :
+        type === 'document' ? (ext === 'pdf' ? 'application/pdf' : 'application/octet-stream') :
+        `image/${ext}`;
+    }
+
+    if (!ext) ext = type === 'video' ? 'mp4' : type === 'document' ? 'pdf' : 'jpg';
     const fileName = `${user!.id}/${Date.now()}.${ext}`;
-    const contentType =
-      type === 'video'    ? `video/${ext}` :
-      type === 'document' ? (ext === 'pdf' ? 'application/pdf' : 'application/octet-stream') :
-      `image/${ext}`;
 
     try {
-      if (type === 'video') {
-        // Videos: upload nativo con FileSystem para no cargar el archivo entero en RAM
+      if (type === 'video' && Platform.OS !== 'web') {
+        // Videos en nativo: upload streaming para no cargar en RAM
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token ?? SUPABASE_ANON_KEY;
         const uploadUrl = `${SUPABASE_URL}/storage/v1/object/Portfolio/${fileName}`;
@@ -188,16 +204,14 @@ export default function PortfolioScreen() {
           },
         });
 
-        if (result.status >= 300) {
-          throw new Error(`Upload failed: ${result.body}`);
-        }
+        if (result.status >= 300) throw new Error(`Upload failed: ${result.body}`);
       } else {
-        // Fotos y documentos: approach normal (son pequeños, caben en RAM)
+        // Fotos, documentos y videos en web: usar Blob (más compatible con Supabase en web)
         const response = await fetch(uri);
-        const arrayBuffer = await response.arrayBuffer();
+        const blob = await response.blob();
         const { error } = await supabase.storage
           .from('Portfolio')
-          .upload(fileName, arrayBuffer, { contentType, upsert: false });
+          .upload(fileName, blob, { contentType, upsert: false });
         if (error) throw error;
       }
 
@@ -210,9 +224,10 @@ export default function PortfolioScreen() {
       }).select().single();
 
       if (!dbError && dbData) setItems(prev => [...prev, dbData]);
+      else if (dbError) throw dbError;
     } catch (e: any) {
-      Alert.alert('Error al subir', 'Verificá tu conexión o intentá con un clip más corto.');
-      console.error('[portfolio upload]', e.message);
+      Alert.alert('Error al subir', e?.message ?? 'Verificá tu conexión o intentá con un archivo más pequeño.');
+      console.error('[portfolio upload]', e);
     }
   }
 
@@ -236,7 +251,7 @@ export default function PortfolioScreen() {
     for (const asset of result.assets) {
       const isVideo = asset.type === 'video';
       setUploading(isVideo ? 'Subiendo video…' : 'Subiendo foto…');
-      await uploadFile(asset.uri, isVideo ? 'video' : 'photo');
+      await uploadFile(asset.uri, isVideo ? 'video' : 'photo', undefined, asset.mimeType ?? undefined);
     }
     setUploading(null);
   }
@@ -294,7 +309,7 @@ export default function PortfolioScreen() {
 
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile')} style={s.backBtn}>
           <Text style={s.backText}>←</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Mi Portfolio</Text>
@@ -315,7 +330,9 @@ export default function PortfolioScreen() {
                 </View>
             }
             <View style={s.cardInfo}>
-              <Text style={s.cardName}>{profile?.display_name ?? user?.email}</Text>
+              <Text style={[s.cardName, !profile?.display_name && s.cardEmail]} numberOfLines={1} adjustsFontSizeToFit>
+                {profile?.display_name ?? user?.email}
+              </Text>
               {!!profile?.city && (
                 <Text style={s.cardLocation}>
                   📍 {profile.city}{profile.country ? `, ${profile.country}` : ''}
@@ -469,7 +486,6 @@ export default function PortfolioScreen() {
         {/* Empty state */}
         {items.length === 0 && !uploading && (
           <View style={s.empty}>
-            <Text style={s.emptyEmoji}>🎪</Text>
             <Text style={s.emptyTitle}>Tu portfolio está vacío</Text>
             <Text style={s.emptySub}>
               Agregá fotos, videos, documentos PDF o links para mostrar tu trabajo a los venues
@@ -589,6 +605,7 @@ const s = StyleSheet.create({
   avatarLetter:   { fontSize: 28, color: COLORS.white, fontWeight: '700' },
   cardInfo:    { flex: 1 },
   cardName:    { fontSize: FONTS.sizes.lg ?? 20, fontWeight: '800', color: COLORS.text, marginBottom: 2 },
+  cardEmail:   { fontSize: FONTS.sizes.sm ?? 13, fontWeight: '500' },
   cardLocation:{ fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, marginBottom: SPACING.xs },
   cardBio:     { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, lineHeight: 18 },
   tagsScroll:  { marginBottom: SPACING.sm },
