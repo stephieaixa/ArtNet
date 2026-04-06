@@ -300,7 +300,7 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
       <StatusBar style="dark" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} style={styles.backBtn}>
           <Text style={styles.backText}>←</Text>
         </TouchableOpacity>
         <View style={styles.headerActions}>
@@ -314,14 +314,6 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
             <View style={styles.translatedBadge}>
               <Text style={styles.translatedBadgeText}>🌐 {targetLanguage}</Text>
             </View>
-          )}
-          <TouchableOpacity style={styles.shareIconBtn} onPress={handleShare} activeOpacity={0.8}>
-            <Text style={styles.shareIconBtnText}>⬆️</Text>
-          </TouchableOpacity>
-          {job.source_url && (
-            <TouchableOpacity style={styles.shareBtn} onPress={() => Linking.openURL(job.source_url!)}>
-              <Text style={styles.shareText}>{t('job.viewSource')}</Text>
-            </TouchableOpacity>
           )}
         </View>
       </View>
@@ -355,7 +347,7 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
             <View style={styles.venueAvatar}>
               <Text style={styles.venueAvatarText}>{job.venue_name[0]?.toUpperCase()}</Text>
             </View>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.venueName}>{job.venue_name}</Text>
               {(job.location_city || job.location_country) && (
                 <Text style={styles.venueLocation}>
@@ -363,6 +355,9 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
                 </Text>
               )}
             </View>
+            <TouchableOpacity style={styles.shareIconBtn} onPress={handleShare} activeOpacity={0.8}>
+              <Text style={styles.shareIconBtnText}>⬆️</Text>
+            </TouchableOpacity>
           </View>
         ) : (job.location_city || job.location_country) ? (
           <View style={styles.infoRow}>
@@ -447,6 +442,13 @@ Redactá una carta de presentación breve y profesional (3-4 párrafos) para est
               )}
             </View>
           </>
+        )}
+
+        {/* Source link at bottom */}
+        {job.source_url && (
+          <TouchableOpacity style={styles.sourceLinkBtn} onPress={() => Linking.openURL(job.source_url!)} activeOpacity={0.7}>
+            <Text style={styles.sourceLinkText}>🔗 {t('job.viewSource')}</Text>
+          </TouchableOpacity>
         )}
 
         <View style={{ height: 100 }} />
@@ -666,7 +668,9 @@ const styles = StyleSheet.create({
   venueTagText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   communityBadge: { fontSize: FONTS.sizes.xs, color: COLORS.primary, fontWeight: '700', backgroundColor: '#EDE9FE', paddingHorizontal: SPACING.sm, paddingVertical: 2, borderRadius: RADIUS.full },
   title: { fontSize: FONTS.sizes.xxl, fontWeight: '800', color: COLORS.text, lineHeight: 32, marginBottom: SPACING.sm },
-  venueRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, marginBottom: SPACING.sm },
+  venueRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, marginBottom: SPACING.sm, justifyContent: 'space-between' },
+  sourceLinkBtn: { alignSelf: 'flex-start', paddingVertical: SPACING.sm, marginTop: SPACING.sm },
+  sourceLinkText: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary },
   venueAvatar: { width: 44, height: 44, borderRadius: 10, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
   venueAvatarText: { color: COLORS.white, fontWeight: '800', fontSize: FONTS.sizes.lg },
   venueName: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.primary },
