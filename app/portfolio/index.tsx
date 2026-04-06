@@ -609,7 +609,7 @@ const s = StyleSheet.create({
     }),
   },
   cardTop:     { flexDirection: 'row', gap: SPACING.base, marginBottom: SPACING.md },
-  avatar:      { width: 72, height: 72, borderRadius: 36 },
+  avatar:      { width: 44, height: 44, borderRadius: 22 },
   avatarFallback: { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
   avatarLetter:   { fontSize: 28, color: COLORS.white, fontWeight: '700' },
   cardInfo:    { flex: 1 },
