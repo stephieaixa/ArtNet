@@ -532,6 +532,44 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
           </TouchableOpacity>
         )}
 
+        {/* Buscar más info sobre la empresa */}
+        {job.venue_name && (
+          <View style={styles.companySearchCard}>
+            <Text style={styles.companySearchTitle}>🔎 Buscar más sobre la empresa</Text>
+            <Text style={styles.companySearchHint}>Encontrá contactos, redes sociales y más info</Text>
+            <View style={styles.companySearchRow}>
+              <TouchableOpacity
+                style={styles.companySearchBtn}
+                activeOpacity={0.75}
+                onPress={() => Linking.openURL(`https://www.google.com/search?q=${encodeURIComponent(job.venue_name! + ' ' + (job.location_country ?? '') + ' circus audition')}`)}>
+                <Text style={styles.companySearchEmoji}>🔍</Text>
+                <Text style={styles.companySearchLabel}>Google</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.companySearchBtn}
+                activeOpacity={0.75}
+                onPress={() => Linking.openURL(`https://www.google.com/search?q=site:instagram.com+${encodeURIComponent(job.venue_name!)}`)}>
+                <Text style={styles.companySearchEmoji}>📷</Text>
+                <Text style={styles.companySearchLabel}>Instagram</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.companySearchBtn}
+                activeOpacity={0.75}
+                onPress={() => Linking.openURL(`https://www.facebook.com/search/pages/?q=${encodeURIComponent(job.venue_name!)}`)}>
+                <Text style={styles.companySearchEmoji}>👥</Text>
+                <Text style={styles.companySearchLabel}>Facebook</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.companySearchBtn}
+                activeOpacity={0.75}
+                onPress={() => Linking.openURL(`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(job.venue_name!)}`)}>
+                <Text style={styles.companySearchEmoji}>💼</Text>
+                <Text style={styles.companySearchLabel}>LinkedIn</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -821,6 +859,21 @@ const styles = StyleSheet.create({
   copyBtnText: { color: COLORS.white, fontWeight: '700', fontSize: FONTS.sizes.base },
   profileTip: { fontSize: FONTS.sizes.sm, color: COLORS.primary, textAlign: 'center', lineHeight: 18, marginTop: SPACING.sm },
   sourceWarning: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, lineHeight: 16, marginTop: SPACING.xs, marginBottom: SPACING.sm },
+  companySearchCard: {
+    marginTop: SPACING.xl, backgroundColor: COLORS.white,
+    borderRadius: RADIUS.xl, padding: SPACING.base,
+    borderWidth: 1, borderColor: COLORS.borderLight,
+  },
+  companySearchTitle: { fontSize: FONTS.sizes.sm, fontWeight: '800', color: COLORS.text, marginBottom: 3 },
+  companySearchHint: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginBottom: SPACING.base },
+  companySearchRow: { flexDirection: 'row', gap: SPACING.sm },
+  companySearchBtn: {
+    flex: 1, alignItems: 'center', gap: 4,
+    backgroundColor: COLORS.background, borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.sm, borderWidth: 1, borderColor: COLORS.borderLight,
+  },
+  companySearchEmoji: { fontSize: 20 },
+  companySearchLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, fontWeight: '600' },
   input: {
     backgroundColor: COLORS.white, borderWidth: 1.5, borderColor: COLORS.border,
     borderRadius: RADIUS.md, padding: SPACING.base, fontSize: FONTS.sizes.base, color: COLORS.text,

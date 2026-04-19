@@ -11,15 +11,29 @@ import Groq from 'groq-sdk';
 
 // ─── Lista canónica de disciplinas de la app ──────────────────────────────────
 const DISCIPLINES_LIST = `
-AÉREO: aerial_silk (Tela), aerial_hoop (Aro/Lyra), aerial_trapeze (Trapecio), aerial_straps (Cintas), aerial_rope (Cuerda/Cuerda Lisa), aerial_cube (Cubo Aéreo), hair_suspension (Suspensión Capilar/Hair Suspension), chinese_pole (Palo Chino), russian_bar (Barra Rusa)
-ACROBACIA DE PISO: acrobatics (Acrobacia), partner_acrobatics (Acrobacia Dúo/Portor), contortion (Contorsionismo), hand_balance (Verticalista), banquine (Banquina), teeterboard (Balancín/Trampolín), wheel_of_death (Rueda de la Muerte), rola_bola (Rola Bola), cyr_wheel (Rueda Cyr/German Wheel)
-MANIPULACIÓN: juggling (Malabares), poi (Poi), staff (Staff/Bastón), hula_hoop (Hula Hoop), diabolo (Diábolo), kendama (Kendama/Yo-yo)
-FUEGO: fire_poi (Poi de Fuego), fire_staff (Staff de Fuego), fire_juggling (Malabares con Fuego), fire_hoop (Hula Hoop de Fuego), fire_eating (Tragafuegos)
+AÉREO: aerial_silk (Tela/Aerial Silk), aerial_hoop (Aro/Lyra), aerial_trapeze (Trapecio/Trapeze), flying_trapeze (Trapecio Volante/Flying Trapeze), swinging_trapeze (Trapecio Balancín/Swinging Trapeze), dance_trapeze (Trapecio de Danza/Dance Trapeze), aerial_straps (Cintas/Straps), aerial_rope (Cuerda/Cuerda Lisa/Rope), cloud_swing (Cloud Swing/Hamaca), aerial_cradle (Cuna Aérea/Aerial Cradle), korean_cradle (Cuna Coreana/Korean Cradle), aerial_cube (Cubo Aéreo), aerial_pole (Pole Aéreo/Aerial Pole), hair_suspension (Suspensión Capilar/Hair Suspension), chinese_pole (Palo Chino/Chinese Pole), russian_bar (Barra Rusa/Russian Bar)
+ACROBACIA DE PISO: acrobatics (Acrobacia/Acrobatics), partner_acrobatics (Acrobacia Dúo/Portor/Partner Acrobatics), hand_to_hand (Hand to Hand/Mano a Mano), basic_scale (Báscula/Basic Scale), contortion (Contorsionismo/Contortion), hand_balance (Verticalista/Hand Balance), banquine (Banquina), teeterboard (Balancín/Trampolín/Teeterboard), wheel_of_death (Rueda de la Muerte/Wheel of Death), rola_bola (Rola Bola), cyr_wheel (Rueda Cyr/Cyr Wheel), german_wheel (German Wheel/Rhönrad)
+MANIPULACIÓN: juggling (Malabares/Juggling), poi (Poi), staff (Staff/Bastón), hula_hoop (Hula Hoop), diabolo (Diábolo/Diabolo), kendama (Kendama/Yo-yo)
+FUEGO: fire_poi (Poi de Fuego/Fire Poi), fire_staff (Staff de Fuego/Fire Staff), fire_juggling (Malabares con Fuego/Fire Juggling), fire_hoop (Hula Hoop de Fuego/Fire Hoop), fire_eating (Tragafuegos/Fire Eating/Fire Breathing)
 LED/LUMINOSO: led_poi (Poi LED), led_staff (Staff LED), led_hoop (Hula Hoop LED), led_suit (Traje LED), led_show (Show LED/Luminoso), glow (Glow/Neón)
-EQUILIBRISMO: tightrope (Cuerda Floja/Slackline), unicycle (Monociclo), bottle_balance (Equilibrio en Botellas/Bottle Balance)
-CLOWN & COMEDIA: clown (Clown), mime (Mimo), bouffon (Bufón/Bouffon), physical_comedy (Comedia Física)
-PERSONAJE & CALLE: stilt_walking (Zancos), living_statue (Estatua Viviente), street_show (Espectáculo Callejero)
-PRODUCCIÓN: spectacle_direction (Dirección de Espectáculos), choreography (Coreografía), stage_management (Producción/Stage Manager)
+EQUILIBRISMO: tightrope (Cuerda Floja/Slackline/Tightrope), unicycle (Monociclo/Unicycle), bottle_balance (Equilibrio en Botellas/Bottle Balance)
+CLOWN & COMEDIA: clown (Clown/Payaso), mime (Mimo/Mime), bouffon (Bufón/Bouffon), physical_comedy (Comedia Física/Physical Comedy)
+PERSONAJE & CALLE: stilt_walking (Zancos/Stilt Walking), living_statue (Estatua Viviente/Living Statue), street_show (Espectáculo Callejero/Street Show)
+PRODUCCIÓN: spectacle_direction (Dirección de Espectáculos), choreography (Coreografía/Choreography), stage_management (Producción/Stage Manager)
+
+MAPEOS IMPORTANTES — usá siempre el ID correcto:
+- "trapeze" sin especificar → aerial_trapeze
+- "flying trapeze" o "trapecio volante" → flying_trapeze
+- "swinging trapeze" o "trapecio balancín" → swinging_trapeze
+- "cloud swing" o "hamaca aérea" → cloud_swing
+- "cradle" o "cuna" → aerial_cradle (si no especifica korean)
+- "korean cradle" → korean_cradle
+- "hand to hand" o "mano a mano" → hand_to_hand
+- "báscula" → basic_scale
+- "cyr" → cyr_wheel; "german wheel" o "rhönrad" → german_wheel
+- "aerial pole" o "pole aéreo" (en contexto de circo/show) → aerial_pole
+- "russian bar" o "barra rusa" → russian_bar
+- "straps" o "cintas" → aerial_straps
 `.trim();
 
 const SYSTEM_PROMPT = `Sos un clasificador y extractor especializado en ofertas de trabajo para artistas de CIRCO, VARIETÉ y ARTES ACROBÁTICAS.

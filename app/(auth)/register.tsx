@@ -52,7 +52,10 @@ export default function RegisterScreen() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { role: role ?? 'artist' } },
+        options: {
+          data: { role: role ?? 'artist' },
+          emailRedirectTo: 'https://artnet-circus.vercel.app',
+        },
       });
       if (error) {
         showAlert(t('common.error'), error.message);

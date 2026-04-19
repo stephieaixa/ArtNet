@@ -40,6 +40,8 @@ export default function ArtistOnboardingScreen() {
   const [availableFrom, setAvailableFrom] = useState('');
   const [availableTo, setAvailableTo] = useState('');
 
+  const [errorMsg, setErrorMsg] = useState('');
+
   // Pre-cargar datos existentes
   useEffect(() => {
     if (!user?.id) return;
@@ -119,14 +121,14 @@ export default function ArtistOnboardingScreen() {
   };
 
   const handleNext = () => {
+    setErrorMsg('');
     if (step === 1) {
-      if (!displayName || !city || !country) {
-        Alert.alert('Completá los campos obligatorios');
-        return;
-      }
+      if (!displayName.trim()) { setErrorMsg('⚠️ Completá tu nombre artístico'); return; }
+      if (!city.trim()) { setErrorMsg('⚠️ Completá tu ciudad'); return; }
+      if (!country.trim()) { setErrorMsg('⚠️ Completá tu país'); return; }
     }
     if (step === 2 && selectedDisciplines.length === 0) {
-      Alert.alert('Seleccioná al menos una disciplina');
+      setErrorMsg('⚠️ Seleccioná al menos una disciplina');
       return;
     }
     if (step < TOTAL_STEPS) {
@@ -371,6 +373,10 @@ export default function ArtistOnboardingScreen() {
 
       {/* Footer buttons */}
       <View style={styles.footer}>
+        {!!errorMsg && (
+          <Text style={styles.errorMsg}>{errorMsg}</Text>
+        )}
+        <View style={styles.footerRow}>
         {step > 1 && (
           <TouchableOpacity style={styles.backBtn} onPress={() => setStep(s => s - 1)}>
             <Text style={styles.backBtnText}>← Atrás</Text>
@@ -390,6 +396,7 @@ export default function ArtistOnboardingScreen() {
             </Text>
           )}
         </TouchableOpacity>
+        </View>
       </View>
     </View>
     </KeyboardAvoidingView>
@@ -524,13 +531,17 @@ const styles = StyleSheet.create({
   readyEmoji: { fontSize: 24 },
   readyText: { flex: 1, fontSize: FONTS.sizes.sm, color: '#065F46', lineHeight: 20 },
   footer: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: SPACING.sm,
     padding: SPACING.xl,
     paddingBottom: 24,
     backgroundColor: COLORS.background,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
   },
   backBtn: {
     padding: SPACING.base,
@@ -549,4 +560,11 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.6 },
   nextBtnText: { color: COLORS.white, fontSize: FONTS.sizes.base, fontWeight: '700' },
+  errorMsg: {
+    width: '100%',
+    fontSize: FONTS.sizes.sm,
+    color: '#B91C1C',
+    fontWeight: '600',
+    marginBottom: SPACING.sm,
+  },
 });

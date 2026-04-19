@@ -33,11 +33,25 @@ export default function WelcomeScreen() {
         <Text style={styles.subtitle}>{t('welcome.subtitle')}</Text>
 
         <TouchableOpacity
+          style={styles.loginBtn}
+          onPress={() => router.push('/(auth)/login')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.loginBtnText}>{t('welcome.loginLink')}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>{t('welcome.newHere')}</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <TouchableOpacity
           style={styles.btnArtist}
           onPress={() => router.push('/(auth)/register?role=artist')}
           activeOpacity={0.85}
         >
-          <Text style={styles.btnArtistEmoji}>🎨</Text>
+          <Text style={styles.btnArtistEmoji}>🎭</Text>
           <View>
             <Text style={styles.btnArtistTitle}>{t('welcome.artistBtn')}</Text>
             <Text style={styles.btnSubtitle}>{t('welcome.artistSub')}</Text>
@@ -49,7 +63,7 @@ export default function WelcomeScreen() {
           onPress={() => router.push('/(auth)/register?role=venue')}
           activeOpacity={0.85}
         >
-          <Text style={styles.btnVenueEmoji}>🏨</Text>
+          <Text style={styles.btnVenueEmoji}>🧑‍💼</Text>
           <View>
             <Text style={styles.btnVenueTitle}>{t('welcome.venueBtn')}</Text>
             <Text style={styles.btnSubtitle2}>{t('welcome.venueSub')}</Text>
@@ -62,20 +76,6 @@ export default function WelcomeScreen() {
           activeOpacity={0.85}
         >
           <Text style={styles.guestBtnText}>{t('welcome.guestPost')}</Text>
-        </TouchableOpacity>
-
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>{t('welcome.alreadyAccount')}</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <TouchableOpacity
-          style={styles.loginBtn}
-          onPress={() => router.push('/(auth)/login')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.loginBtnText}>{t('welcome.loginLink')}</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -96,6 +96,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 48,
     paddingBottom: 36,
+    position: 'relative',
+  },
+  loginTopBtn: {
+    position: 'absolute',
+    top: 52,
+    right: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  loginTopText: {
+    color: COLORS.white,
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '600',
   },
   logoContainer: {
     alignItems: 'center',

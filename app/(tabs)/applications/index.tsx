@@ -1,12 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, Alert,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '../../../src/services/supabase';
 import { useAuthStore } from '../../../src/stores/authStore';
+import { useLanguageStore } from '../../../src/stores/languageStore';
+import { translateTitlesBatch } from '../../../src/services/translate';
 import {
   fetchMyApplications, fetchApplicationsForMyJobs,
   updateApplicationStatus, acceptApplicationAndChat,
@@ -16,13 +19,6 @@ import { COLORS, FONTS, SPACING, RADIUS, HEADER_TOP } from '../../../src/constan
 
 type Tab = 'received' | 'sent';
 
-const STATUS_LABEL: Record<ApplicationStatus, string> = {
-  pending:  '⏳ Pendiente',
-  viewed:   '👀 Vista',
-  accepted: '✅ Aceptada',
-  rejected: '❌ Rechazada',
-};
-
 const STATUS_COLOR: Record<ApplicationStatus, string> = {
   pending:  '#F59E0B',
   viewed:   '#3B82F6',
@@ -31,11 +27,15 @@ const STATUS_COLOR: Record<ApplicationStatus, string> = {
 };
 
 export default function ApplicationsScreen() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
+  const { targetLanguage } = useLanguageStore();
+  const isDefaultLang = targetLanguage === 'Español';
   const [tab, setTab] = useState<Tab>('received');
   const [received, setReceived] = useState<Application[]>([]);
   const [sent, setSent] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
+  const [titleMap, setTitleMap] = useState<Record<string, string>>({});
 
   useFocusEffect(
     useCallback(() => {
@@ -55,6 +55,29 @@ export default function ApplicationsScreen() {
     setLoading(false);
   }
 
+  // Translate job titles when language or data changes
+  useEffect(() => {
+    if (isDefaultLang) { setTitleMap({}); return; }
+    const allApps = [...received, ...sent];
+    const items = allApps
+      .filter(a => a.job?.title && a.job_id)
+      .map(a => ({ id: a.job_id, title: a.job!.title! }))
+      .filter((v, i, arr) => arr.findIndex(x => x.id === v.id) === i); // unique by id
+    if (!items.length) return;
+    let cancelled = false;
+    translateTitlesBatch(items, targetLanguage).then(result => {
+      if (!cancelled && result) setTitleMap(result);
+    });
+    return () => { cancelled = true; };
+  }, [received, sent, targetLanguage]);
+
+  const STATUS_LABEL: Record<ApplicationStatus, string> = {
+    pending:  t('applications.statusPending'),
+    viewed:   t('applications.statusViewed'),
+    accepted: t('applications.statusAccepted'),
+    rejected: t('applications.statusRejected'),
+  };
+
   async function openChat(applicationId: string) {
     const { data } = await supabase
       .from('conversations')
@@ -66,12 +89,12 @@ export default function ApplicationsScreen() {
 
   async function handleAccept(app: Application) {
     Alert.alert(
-      'Aceptar postulación',
-      `¿Aceptás la postulación? Se abrirá un chat con ${app.artist?.display_name ?? 'el artista'}.`,
+      t('applications.acceptTitle'),
+      t('applications.acceptMsg', { name: app.artist?.display_name ?? t('applications.artistFallback') }),
       [
-        { text: 'Cancelar', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Aceptar y chatear', onPress: async () => {
+          text: t('applications.accept'), onPress: async () => {
             const convId = await acceptApplicationAndChat(app);
             setReceived(prev =>
               prev.map(a => a.id === app.id ? { ...a, status: 'accepted' } : a)
@@ -84,10 +107,10 @@ export default function ApplicationsScreen() {
   }
 
   async function handleReject(app: Application) {
-    Alert.alert('Rechazar', '¿Rechazás esta postulación?', [
-      { text: 'Cancelar', style: 'cancel' },
+    Alert.alert(t('applications.rejectTitle'), t('applications.rejectMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Rechazar', style: 'destructive', onPress: async () => {
+        text: t('applications.reject'), style: 'destructive', onPress: async () => {
           await updateApplicationStatus(app.id, 'rejected');
           setReceived(prev =>
             prev.map(a => a.id === app.id ? { ...a, status: 'rejected' } : a)
@@ -97,14 +120,11 @@ export default function ApplicationsScreen() {
     ]);
   }
 
-  const hasReceived = received.length > 0;
-  const hasSent = sent.length > 0;
-
   return (
     <View style={s.container}>
       <StatusBar style="dark" />
       <View style={s.header}>
-        <Text style={s.title}>Postulaciones</Text>
+        <Text style={s.title}>{t('applications.title')}</Text>
       </View>
 
       {/* Tabs */}
@@ -114,7 +134,7 @@ export default function ApplicationsScreen() {
           onPress={() => setTab('received')}
         >
           <Text style={[s.tabText, tab === 'received' && s.tabTextActive]}>
-            Recibidas {received.length > 0 ? `(${received.length})` : ''}
+            {t('applications.received')} {received.length > 0 ? `(${received.length})` : ''}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -122,7 +142,7 @@ export default function ApplicationsScreen() {
           onPress={() => setTab('sent')}
         >
           <Text style={[s.tabText, tab === 'sent' && s.tabTextActive]}>
-            Enviadas {sent.length > 0 ? `(${sent.length})` : ''}
+            {t('applications.sent')} {sent.length > 0 ? `(${sent.length})` : ''}
           </Text>
         </TouchableOpacity>
       </View>
@@ -139,8 +159,10 @@ export default function ApplicationsScreen() {
             <View style={s.card}>
               <View style={s.cardTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.artistName}>{item.artist?.display_name ?? 'Artista'}</Text>
-                  <Text style={s.jobTitle} numberOfLines={1}>{item.job?.title ?? ''}</Text>
+                  <Text style={s.artistName}>{item.artist?.display_name ?? t('applications.artistFallback')}</Text>
+                  <Text style={s.jobTitle} numberOfLines={1}>
+                    {titleMap[item.job_id] ?? item.job?.title ?? ''}
+                  </Text>
                   {item.artist?.disciplines?.length ? (
                     <Text style={s.disciplines} numberOfLines={1}>
                       {item.artist.disciplines.slice(0, 3).join(' · ')}
@@ -161,25 +183,16 @@ export default function ApplicationsScreen() {
               ) : null}
               {item.status === 'pending' || item.status === 'viewed' ? (
                 <View style={s.actions}>
-                  <TouchableOpacity
-                    style={s.rejectBtn}
-                    onPress={() => handleReject(item)}
-                  >
-                    <Text style={s.rejectBtnText}>Rechazar</Text>
+                  <TouchableOpacity style={s.rejectBtn} onPress={() => handleReject(item)}>
+                    <Text style={s.rejectBtnText}>{t('applications.reject')}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={s.acceptBtn}
-                    onPress={() => handleAccept(item)}
-                  >
-                    <Text style={s.acceptBtnText}>Aceptar y chatear →</Text>
+                  <TouchableOpacity style={s.acceptBtn} onPress={() => handleAccept(item)}>
+                    <Text style={s.acceptBtnText}>{t('applications.accept')}</Text>
                   </TouchableOpacity>
                 </View>
               ) : item.status === 'accepted' ? (
-                <TouchableOpacity
-                  style={s.chatBtn}
-                  onPress={() => openChat(item.id)}
-                >
-                  <Text style={s.chatBtnText}>Ir al chat →</Text>
+                <TouchableOpacity style={s.chatBtn} onPress={() => openChat(item.id)}>
+                  <Text style={s.chatBtnText}>{t('applications.goToChat')}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -187,10 +200,10 @@ export default function ApplicationsScreen() {
           ListEmptyComponent={
             <View style={s.empty}>
               <Text style={s.emptyEmoji}>📭</Text>
-              <Text style={s.emptyTitle}>Sin postulaciones recibidas</Text>
-              <Text style={s.emptySubtitle}>Cuando publiques una convocatoria y alguien se postule, aparecerá aquí.</Text>
+              <Text style={s.emptyTitle}>{t('applications.emptyReceivedTitle')}</Text>
+              <Text style={s.emptySubtitle}>{t('applications.emptyReceivedSub')}</Text>
               <TouchableOpacity style={s.emptyBtn} onPress={() => router.push('/post/manual')}>
-                <Text style={s.emptyBtnText}>Publicar convocatoria</Text>
+                <Text style={s.emptyBtnText}>{t('applications.emptyReceivedBtn')}</Text>
               </TouchableOpacity>
             </View>
           }
@@ -209,7 +222,9 @@ export default function ApplicationsScreen() {
             >
               <View style={s.cardTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.jobTitle}>{item.job?.title ?? 'Convocatoria'}</Text>
+                  <Text style={s.jobTitle}>
+                    {titleMap[item.job_id] ?? item.job?.title ?? t('applications.title')}
+                  </Text>
                   {item.job?.venue_name ? (
                     <Text style={s.venueName}>{item.job.venue_name}</Text>
                   ) : null}
@@ -229,11 +244,8 @@ export default function ApplicationsScreen() {
                 <Text style={s.coverMsg} numberOfLines={2}>"{item.cover_message}"</Text>
               ) : null}
               {item.status === 'accepted' && (
-                <TouchableOpacity
-                  style={s.chatBtn}
-                  onPress={() => openChat(item.id)}
-                >
-                  <Text style={s.chatBtnText}>Ir al chat →</Text>
+                <TouchableOpacity style={s.chatBtn} onPress={() => openChat(item.id)}>
+                  <Text style={s.chatBtnText}>{t('applications.goToChat')}</Text>
                 </TouchableOpacity>
               )}
             </TouchableOpacity>
@@ -241,10 +253,10 @@ export default function ApplicationsScreen() {
           ListEmptyComponent={
             <View style={s.empty}>
               <Text style={s.emptyEmoji}>📤</Text>
-              <Text style={s.emptyTitle}>Sin postulaciones enviadas</Text>
-              <Text style={s.emptySubtitle}>Cuando te postulés a una convocatoria dentro de ArtNet, aparecerá aquí.</Text>
+              <Text style={s.emptyTitle}>{t('applications.emptySentTitle')}</Text>
+              <Text style={s.emptySubtitle}>{t('applications.emptySentSub')}</Text>
               <TouchableOpacity style={s.emptyBtn} onPress={() => router.push('/(tabs)')}>
-                <Text style={s.emptyBtnText}>Ver convocatorias</Text>
+                <Text style={s.emptyBtnText}>{t('applications.emptySentBtn')}</Text>
               </TouchableOpacity>
             </View>
           }

@@ -21,19 +21,48 @@ import { saveJob, jobExists } from '../db.js';
 
 const SERPER_API = 'https://google.serper.dev/search';
 
+const CURRENT_YEAR  = new Date().getFullYear();
+const NEXT_YEAR     = CURRENT_YEAR + 1;
+const YEARS         = `${CURRENT_YEAR} OR ${NEXT_YEAR}`;
+
 // Búsquedas especializadas — cada una busca en nichos distintos
 const SEARCH_QUERIES = [
-  // Grupos de Facebook públicos con preview en Google
-  { q: '"audición" OR "casting" circo acróbata site:facebook.com', region: 'global', lang: 'es' },
-  { q: '"audition" circus acrobat performer cruise site:facebook.com', region: 'global', lang: 'en' },
-  { q: '"se busca" artista circo acróbata trapecista malabarista', region: 'global', lang: 'es' },
-  { q: '"looking for" circus performer acrobat entertainer -dance -ballet -theater', region: 'global', lang: 'en' },
-  { q: 'audicion circo varieté 2025 convocatoria artista escénico', region: 'global', lang: 'es' },
-  { q: 'circus performer job audition 2025 -dance -theater -ballet', region: 'global', lang: 'en' },
-  { q: '"artiste cirque" "audition" OR "casting" 2025', region: 'global', lang: 'fr' },
-  { q: 'crucero artista circo acróbata "se busca" OR "buscamos"', region: 'global', lang: 'es' },
-  { q: 'cruise ship circus performer acrobat entertainer audition 2025', region: 'global', lang: 'en' },
-  { q: 'festival circo artistas convocatoria audición 2025', region: 'global', lang: 'es' },
+  // ── Facebook (grupos de circo — muchas convocatorias se publican ahí) ──
+  { q: `"audición" OR "casting" circo acróbata site:facebook.com`, lang: 'es' },
+  { q: `"audition" circus acrobat performer entertainer site:facebook.com ${YEARS}`, lang: 'en' },
+  { q: `"se busca" artista circo trapecista malabarista "tela" OR "aro" OR "trapecio" site:facebook.com`, lang: 'es' },
+
+  // ── Cruceros — uno de los mayores empleadores de circo ──
+  { q: `cruise ship circus performer acrobat entertainer audition ${YEARS} -dance -ballet`, lang: 'en' },
+  { q: `crucero artista circo acróbata "se busca" OR "buscamos" ${YEARS}`, lang: 'es' },
+  { q: `"Royal Caribbean" OR "MSC" OR "Carnival" OR "Norwegian" circus acrobat performer audition ${YEARS}`, lang: 'en' },
+  { q: `"Club Med" OR "Disney" OR "Universal" circus entertainer performer acrobat casting ${YEARS}`, lang: 'en' },
+
+  // ── Circos y festivales ──
+  { q: `festival circo artistas convocatoria audición ${YEARS}`, lang: 'es' },
+  { q: `circus festival artist audition casting ${YEARS} -dance -theater -music`, lang: 'en' },
+  { q: `"cirque" "audition" OR "casting" artiste ${YEARS}`, lang: 'fr' },
+
+  // ── Temáticos: disciplinas específicas ──
+  { q: `"flying trapeze" OR "trapecio volante" audition casting job ${YEARS}`, lang: 'en' },
+  { q: `"aerial silk" OR "tela" OR "aerial hoop" performer job audition ${YEARS}`, lang: 'en' },
+  { q: `"hand to hand" OR "partner acrobatics" audition casting job ${YEARS}`, lang: 'en' },
+  { q: `"russian bar" OR "barra rusa" OR "korean cradle" audition casting performer ${YEARS}`, lang: 'en' },
+  { q: `"cloud swing" OR "aerial cradle" OR "swinging trapeze" performer job ${YEARS}`, lang: 'en' },
+  { q: `"acróbatas" OR "malabaristas" OR "equilibristas" convocatoria contrato ${YEARS}`, lang: 'es' },
+
+  // ── Hoteles, casinos, parques ──
+  { q: `hotel resort casino entertainer performer acrobat circus hire ${YEARS}`, lang: 'en' },
+  { q: `"parque de atracciones" OR "Disneyland" OR "PortAventura" artista acróbata contrato ${YEARS}`, lang: 'es' },
+  { q: `"dinner show" OR "dinner theatre" acrobat circus performer hiring ${YEARS}`, lang: 'en' },
+
+  // ── Navidad / Año Nuevo / temporadas ──
+  { q: `christmas show circus acrobat performer audition ${NEXT_YEAR}`, lang: 'en' },
+  { q: `"show de navidad" OR "año nuevo" circo acróbata artista convocatoria ${NEXT_YEAR}`, lang: 'es' },
+
+  // ── Instagram vía Google ──
+  { q: `site:instagram.com "circus" "audition" OR "casting" performer ${YEARS}`, lang: 'en' },
+  { q: `site:instagram.com "circo" "audición" OR "casting" artista ${YEARS}`, lang: 'es' },
 ];
 
 // Dominios que no vale la pena procesar (muy genéricos o irrelevantes)

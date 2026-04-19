@@ -247,6 +247,15 @@ const fr = {
     seeFeed: 'Voir le fil',
     analyzing: 'Analyse avec l\'IA...',
   },
+  tabs: {
+    discover: 'Explorer',
+    directory: 'Annuaire',
+    inspire: "S'inspirer",
+    activity: 'Activité',
+    profile: 'Profil',
+    messages: 'Messages',
+    myPosts: 'Mes annonces',
+  },
   language: {
     title: 'Idioma / Language',
     es: 'Español',
@@ -255,6 +264,10 @@ const fr = {
     it: 'Italiano',
     pt: 'Português',
     de: 'Deutsch',
+    translating: 'Traduction…',
+    translationError: 'Impossible de traduire. Vérifiez votre connexion.',
+    hint: "L'espagnol, l'anglais et le français changent instantanément. Les autres langues utilisent l'IA (quelques secondes).",
+    select: 'Choisir la langue',
   },
   venueTypes: {
     cruise_ship: 'Croisière',

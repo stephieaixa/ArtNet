@@ -15,6 +15,7 @@ export type FilterState = {
   countries: string[];
   genres: string[];      // filtro genérico: aerial, floor, manipulation, fire, led...
   disciplines: string[]; // props específicos: tela, poi, trapecio...
+  months: string[];      // mes de inicio: "1"–"12"
 };
 
 interface FilterModalProps {
@@ -46,6 +47,15 @@ const COUNTRIES_BY_REGION: Record<string, string[]> = {
   global: ['Internacional / Crucero', 'Remote / Online'],
 };
 
+const MONTHS = [
+  { id: '1', es: 'Ene', en: 'Jan' }, { id: '2', es: 'Feb', en: 'Feb' },
+  { id: '3', es: 'Mar', en: 'Mar' }, { id: '4', es: 'Abr', en: 'Apr' },
+  { id: '5', es: 'May', en: 'May' }, { id: '6', es: 'Jun', en: 'Jun' },
+  { id: '7', es: 'Jul', en: 'Jul' }, { id: '8', es: 'Ago', en: 'Aug' },
+  { id: '9', es: 'Sep', en: 'Sep' }, { id: '10', es: 'Oct', en: 'Oct' },
+  { id: '11', es: 'Nov', en: 'Nov' }, { id: '12', es: 'Dic', en: 'Dec' },
+];
+
 function toggle(arr: string[], value: string): string[] {
   return arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value];
 }
@@ -70,6 +80,7 @@ export default function FilterModal({ visible, onClose, onApply, initialFilters 
   const [local, setLocal] = useState<FilterState>(initialFilters);
   const [expandedRegion, setExpandedRegion] = useState<string | null>(null);
   const REGIONS = REGION_IDS.map(r => ({ ...r, label: t(`regions.${r.id}`) }));
+  const isEn = t('language.en') === 'English';
 
   useEffect(() => {
     if (visible) setLocal(initialFilters);
@@ -77,10 +88,10 @@ export default function FilterModal({ visible, onClose, onApply, initialFilters 
 
   const activeCount =
     local.venueTypes.length + local.regions.length + local.countries.length +
-    local.genres.length + local.disciplines.length;
+    local.genres.length + local.disciplines.length + local.months.length;
 
   function handleClear() {
-    setLocal({ venueTypes: [], regions: [], countries: [], genres: [], disciplines: [] });
+    setLocal({ venueTypes: [], regions: [], countries: [], genres: [], disciplines: [], months: [] });
     setExpandedRegion(null);
   }
 
@@ -108,6 +119,10 @@ export default function FilterModal({ visible, onClose, onApply, initialFilters 
 
   function toggleDiscipline(id: string) {
     setLocal(prev => ({ ...prev, disciplines: toggle(prev.disciplines, id) }));
+  }
+
+  function toggleMonth(id: string) {
+    setLocal(prev => ({ ...prev, months: toggle(prev.months, id) }));
   }
 
   return (
@@ -192,6 +207,22 @@ export default function FilterModal({ visible, onClose, onApply, initialFilters 
               {['Argentina', 'España', 'Francia', 'Italia', 'México', 'Brasil', 'Colombia', 'Chile', 'Alemania', 'Reino Unido', 'Estados Unidos', 'Canadá', 'Australia', 'Japón', 'Emiratos Árabes'].map(country => (
                 <Chip key={country} label={country}
                   selected={local.countries.includes(country)} onPress={() => toggleCountry(country)} />
+              ))}
+            </View>
+          </View>
+
+          {/* Mes de inicio */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('filters.month')}</Text>
+            <Text style={styles.sectionHint}>{t('filters.monthHint')}</Text>
+            <View style={styles.wrapGrid}>
+              {MONTHS.map(m => (
+                <Chip
+                  key={m.id}
+                  label={isEn ? m.en : m.es}
+                  selected={local.months.includes(m.id)}
+                  onPress={() => toggleMonth(m.id)}
+                />
               ))}
             </View>
           </View>

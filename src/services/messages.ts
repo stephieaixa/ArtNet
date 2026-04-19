@@ -125,6 +125,32 @@ export async function markConversationRead(conversationId: string): Promise<void
     .is('read_at', null);
 }
 
+/** Get or create a direct conversation between current user and an artist */
+export async function getOrCreateConversation(artistUserId: string): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Check if a conversation already exists between the two users
+  const { data: existing } = await supabase
+    .from('conversations')
+    .select('id')
+    .or(
+      `and(artist_user_id.eq.${artistUserId},other_user_id.eq.${user.id}),and(artist_user_id.eq.${user.id},other_user_id.eq.${artistUserId})`
+    )
+    .maybeSingle();
+
+  if (existing?.id) return existing.id;
+
+  // Create new conversation
+  const { data: created } = await supabase
+    .from('conversations')
+    .insert({ artist_user_id: artistUserId, other_user_id: user.id })
+    .select('id')
+    .single();
+
+  return created?.id ?? null;
+}
+
 /** Get single conversation (for chat screen) */
 export async function fetchConversation(id: string): Promise<Conversation | null> {
   const {

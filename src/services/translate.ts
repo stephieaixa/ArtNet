@@ -143,6 +143,76 @@ ${JSON.stringify(flat)}`;
   }
 }
 
+// ── Batch title translation (for job cards) ───────────────────────────────────
+
+/**
+ * Translates multiple job titles in a single Groq call.
+ * Input: [{id, title}] — Output: {id: translatedTitle}
+ */
+export async function translateTitlesBatch(
+  items: Array<{ id: string; title: string }>,
+  targetLang: string
+): Promise<Record<string, string>> {
+  if (!GROQ_KEY || !items.length) return {};
+
+  const input = Object.fromEntries(items.map(i => [i.id, i.title]));
+
+  const prompt = `Translate these performing arts job listing titles to ${targetLang}.
+Return ONLY valid JSON object with the same keys and translated values. No markdown, no explanation.
+Keep brand names, proper nouns, and "ArtNet" unchanged.
+
+${JSON.stringify(input)}`;
+
+  const raw = await groqCall(prompt, 3000);
+  if (!raw) return {};
+
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) return {};
+
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return {};
+  }
+}
+
+// ── Batch title + description translation ─────────────────────────────────────
+
+/**
+ * Translates job titles AND descriptions in a single batch call.
+ * Input: [{id, title, description}] — Output: {id: {title, description}}
+ */
+export async function translateBatch(
+  items: Array<{ id: string; title: string; description?: string }>,
+  targetLang: string
+): Promise<Record<string, { title: string; description: string }>> {
+  if (!GROQ_KEY || !items.length) return {};
+
+  const input = Object.fromEntries(
+    items.map(i => [i.id, { t: i.title, d: (i.description ?? '').slice(0, 400) }])
+  );
+
+  const prompt = `Translate these performing arts job listings to ${targetLang}.
+Return ONLY valid JSON with same keys, each value as {"t":"translated title","d":"translated description"}.
+No markdown, no explanation. Keep brand names and "ArtNet" unchanged.
+
+${JSON.stringify(input)}`;
+
+  const raw = await groqCall(prompt, 8000);
+  if (!raw) return {};
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) return {};
+  try {
+    const parsed = JSON.parse(match[0]);
+    const result: Record<string, { title: string; description: string }> = {};
+    for (const [id, val] of Object.entries(parsed)) {
+      const v = val as any;
+      result[id] = { title: v.t ?? '', description: v.d ?? '' };
+    }
+    return result;
+  } catch { return {}; }
+}
+
 // ── Job content translation ───────────────────────────────────────────────────
 
 /**

@@ -130,7 +130,7 @@ export default function GuestPostScreen() {
         <StatusBar style="dark" />
 
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
+          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(auth)/welcome')} style={styles.closeBtn}>
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Publicar búsqueda</Text>

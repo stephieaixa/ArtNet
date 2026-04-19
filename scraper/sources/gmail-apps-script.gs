@@ -58,6 +58,19 @@ function processNewEmails() {
 
 // ─── Procesar un thread ─────────────────────────────────────────────────────
 
+// Dominios y patrones a ignorar silenciosamente (sin notificar a nadie)
+const SKIP_SENDERS = [
+  'no-reply@', 'noreply@', 'mailer-daemon@', 'postmaster@',
+  '@accounts.google.com', '@google.com', '@googlemail.com',
+  '@facebookmail.com', '@instagram.com', '@notifications.',
+  'bounce', 'automated', 'donotreply',
+];
+
+function isSystemEmail(from) {
+  const f = from.toLowerCase();
+  return SKIP_SENDERS.some(pattern => f.includes(pattern));
+}
+
 function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
   const messages = thread.getMessages();
   const msg = messages[messages.length - 1];
@@ -72,6 +85,14 @@ function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
 
   console.log(`Procesando: "${subject}" de ${from}`);
 
+  // Ignorar emails automáticos/de sistema sin notificar a nadie
+  if (isSystemEmail(from)) {
+    console.log('Email de sistema → ignorando silenciosamente');
+    thread.addLabel(GmailApp.getUserLabelByName(LABEL_PROCESSED));
+    thread.moveToArchive();
+    return;
+  }
+
   // ── Detectar link de red social ──────────────────────────────────────────
   const socialUrl = extractSocialUrl(body + ' ' + subject);
 
@@ -80,45 +101,49 @@ function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
     const social = fetchSocialContent(socialUrl);
 
     if (!social) {
-      // Privado o inaccesible → pending_review con el link
+      // Link privado o de grupo → pending_review con el link guardado
       console.log('Contenido privado o inaccesible → pending_review');
       const title = subject.replace(/^(Re:|Fwd:|FW:)\s*/i, '').trim() || 'Posible audición (link privado)';
-      const saved = saveToSupabase({
+      const result = saveToSupabase({
         sourceId, subject: title, from,
         body: body.trim() || `Link enviado: ${socialUrl}`,
         sourceUrl: socialUrl,
         status: 'pending_review',
         supabaseUrl, supabaseKey,
       });
-      if (saved) labelAndArchive(thread, 'pending_review');
+      if (result.ok) {
+        notifyBoth('private_link', title, result.id, extractEmail(from), socialUrl);
+        labelAndArchive(thread, 'pending_review');
+      }
       return;
     }
 
-    // Público → analizar con Groq
+    // Link público → analizar con Groq
     const textToAnalyze = `Asunto: ${subject}\nDe: ${from}\n\nTítulo: ${social.title}\nDescripción: ${social.description}\n\nLink: ${socialUrl}`;
-    const result = validateWithGroq(textToAnalyze, groqKey);
-    console.log(`Resultado IA (social): circus=${result.isCircus}, confidence=${result.confidence}`);
+    const aiResult = validateWithGroq(textToAnalyze, groqKey);
+    console.log(`Resultado IA (social): circus=${aiResult.isCircus}, confidence=${aiResult.confidence}`);
 
-    if (!result.isCircus && result.confidence !== 'low') {
-      console.log('No es circo → archivando');
+    if (!aiResult.isCircus && aiResult.confidence !== 'low') {
+      console.log('No es circo → archivando y notificando');
+      notifyBoth('not_circus', subject, null, extractEmail(from), null);
       thread.addLabel(GmailApp.getUserLabelByName(LABEL_PROCESSED));
       thread.moveToArchive();
       return;
     }
 
-    const status = (result.isCircus && result.confidence === 'high') ? 'published' : 'pending_review';
+    const status = (aiResult.isCircus && aiResult.confidence === 'high') ? 'published' : 'pending_review';
     const title  = social.title || subject.replace(/^(Re:|Fwd:|FW:)\s*/i, '').trim() || 'Audición sin título';
     const saved  = saveToSupabase({
-      sourceId,
-      subject: title,
-      from,
+      sourceId, subject: title, from,
       body: social.description || body.trim(),
       sourceUrl: socialUrl,
       flyerUrl: social.image || null,
-      status,
-      supabaseUrl, supabaseKey,
+      status, supabaseUrl, supabaseKey,
     });
-    if (saved) labelAndArchive(thread, status);
+    if (saved.ok) {
+      notifyBoth(status, title, saved.id, extractEmail(from), null);
+      labelAndArchive(thread, status);
+    }
     return;
   }
 
@@ -128,7 +153,8 @@ function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
   console.log(`Resultado IA: circus=${result.isCircus}, confidence=${result.confidence}`);
 
   if (!result.isCircus && result.confidence !== 'low') {
-    console.log('No es circo → archivando');
+    console.log('No es circo → archivando y notificando');
+    notifyBoth('not_circus', subject, null, extractEmail(from), null);
     thread.addLabel(GmailApp.getUserLabelByName(LABEL_PROCESSED));
     thread.moveToArchive();
     return;
@@ -140,7 +166,10 @@ function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
     sourceUrl: null, flyerUrl: null,
     status, supabaseUrl, supabaseKey,
   });
-  if (saved) labelAndArchive(thread, status);
+  if (saved.ok) {
+    notifyBoth(status, subject, saved.id, extractEmail(from), null);
+    labelAndArchive(thread, status);
+  }
 }
 
 // ─── Detectar URLs de redes sociales ─────────────────────────────────────────
@@ -293,25 +322,165 @@ function saveToSupabase({ sourceId, subject, from, body, sourceUrl, flyerUrl, st
         'apikey':        supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`,
         'Content-Type':  'application/json',
-        'Prefer':        'return=minimal',
+        'Prefer':        'return=representation', // devuelve el registro creado
       },
       payload: JSON.stringify(payload),
       muteHttpExceptions: true,
     });
 
     const code = res.getResponseCode();
-    if (code === 409) { console.log('Ya existe → saltando'); return true; }
-    return code === 201;
+    if (code === 409) { console.log('Ya existe → saltando'); return { ok: true, id: null }; }
+    if (code !== 201) return { ok: false, id: null };
+
+    try {
+      const created = JSON.parse(res.getContentText());
+      const id = Array.isArray(created) ? created[0]?.id : created?.id;
+      return { ok: true, id: id ?? null };
+    } catch {
+      return { ok: true, id: null };
+    }
   } catch (e) {
     console.error('Error Supabase:', e.message);
-    return false;
+    return { ok: false, id: null };
+  }
+}
+
+// ─── Notificaciones ──────────────────────────────────────────────────────────
+
+const ADMIN_EMAIL = 'circusworldlife@gmail.com';
+const APP_URL     = 'https://artnet-circus.vercel.app';
+
+/**
+ * Notifica al ADMIN y al REMITENTE sobre el resultado del procesamiento.
+ *
+ * status:
+ *   'published'      → publicada automáticamente
+ *   'pending_review' → necesita revisión manual
+ *   'not_circus'     → descartada (no era circo)
+ *   'private_link'   → link privado/de grupo, necesita revisión con el texto completo
+ */
+function notifyBoth(status, jobTitle, jobId, fromEmail, extraInfo) {
+  notifyAdmin(status, jobTitle, jobId, fromEmail, extraInfo);
+  notifySender(status, jobTitle, jobId, fromEmail, extraInfo);
+}
+
+// ── Notificación al admin ─────────────────────────────────────────────────────
+
+function notifyAdmin(status, jobTitle, jobId, fromEmail, extraInfo) {
+  try {
+    const jobUrl = jobId ? `${APP_URL}/jobs/${jobId}` : null;
+    let subject, body;
+
+    if (status === 'published') {
+      subject = `✅ ArtNet publicó automáticamente — ${jobTitle}`;
+      body =
+`Nueva convocatoria publicada automáticamente.
+
+Título:      ${jobTitle}
+Enviada por: ${fromEmail || 'desconocido'}
+Ver en app:  ${jobUrl || APP_URL}
+
+Si los datos están mal o hay info incompleta, podés editarla directamente en la app.
+
+— ArtNet Bot`;
+
+    } else if (status === 'pending_review') {
+      subject = `👀 ArtNet — revisión pendiente: ${jobTitle}`;
+      body =
+`Hay una convocatoria esperando tu revisión.
+
+Título:      ${jobTitle}
+Enviada por: ${fromEmail || 'desconocido'}
+${extraInfo ? `Motivo:      ${extraInfo}\n` : ''}
+Para aprobar o rechazar:
+→ Abrí la app con circusworldlife@gmail.com: ${APP_URL}
+→ Vas a ver el banner naranja "X publicaciones pendientes" arriba del feed
+→ Expandilo y usá los botones ✓ Publicar / ✕ Eliminar
+
+— ArtNet Bot`;
+
+    } else if (status === 'private_link') {
+      subject = `🔒 ArtNet — link privado, revisión manual: ${jobTitle}`;
+      body =
+`Se recibió un link que no se pudo procesar automáticamente (era privado o requería login).
+
+Título/Asunto: ${jobTitle}
+Enviada por:   ${fromEmail || 'desconocido'}
+${extraInfo ? `Link:          ${extraInfo}\n` : ''}
+Opciones:
+1. Abrí el link manualmente y copiá el texto de la convocatoria
+2. Respondé al email original con el texto completo para que la IA lo procese
+3. Publicala manualmente desde la app: ${APP_URL}
+
+También aparece en la app como pendiente de revisión.
+
+— ArtNet Bot`;
+
+    } else {
+      // not_circus
+      subject = `❌ ArtNet — descartada (no circo): ${jobTitle}`;
+      body =
+`Se descartó un email porque la IA determinó que no es una convocatoria de circo.
+
+Título/Asunto: ${jobTitle}
+Enviada por:   ${fromEmail || 'desconocido'}
+
+Si creés que fue un error, buscá el email en artnetcircus@gmail.com
+(etiqueta: artnet-procesado) y reenvialo con más contexto.
+
+— ArtNet Bot`;
+    }
+
+    GmailApp.sendEmail(ADMIN_EMAIL, subject, body);
+    console.log(`📧 Admin notificado (${status}): ${subject}`);
+  } catch (e) {
+    console.warn('[notify] No se pudo notificar al admin:', e.message);
+  }
+}
+
+// ── Notificación al remitente ─────────────────────────────────────────────────
+
+function notifySender(status, jobTitle, jobId, fromEmail, extraInfo) {
+  if (!fromEmail || fromEmail === ADMIN_EMAIL) return;
+  try {
+    const jobUrl = jobId ? `${APP_URL}/jobs/${jobId}` : null;
+    const footer = `\n\n-- \nArtNet · artnetcircus@gmail.com`;
+    let subject, body;
+
+    if (status === 'published') {
+      subject = `Gracias por compartir con ArtNet`;
+      body =
+`Hola,
+
+Gracias por enviarnos la convocatoria, ya esta visible en la app para toda la comunidad.
+${jobUrl ? `\nPodés verla aca: ${jobUrl}` : ''}
+
+Seguí compartiendo, cada aporte ayuda a la comunidad circense.${footer}`;
+
+    } else if (status === 'pending_review' || status === 'private_link') {
+      subject = `Gracias por compartir con ArtNet`;
+      body =
+`Hola,
+
+Gracias por enviarnos la convocatoria, la estamos revisando y la publicamos a la brevedad.
+
+Seguí compartiendo las que encuentres, son muy valiosas para la comunidad.${footer}`;
+
+    } else {
+      // not_circus — no notificar, silencio total
+      return;
+    }
+
+    GmailApp.sendEmail(fromEmail, subject, body);
+    console.log(`📧 Remitente notificado (${status}): ${fromEmail}`);
+  } catch (e) {
+    console.warn('[notify] No se pudo notificar al remitente:', e.message);
   }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function labelAndArchive(thread, status) {
-  console.log(`✅ Guardado con status: ${status}`);
   thread.addLabel(GmailApp.getUserLabelByName(LABEL_PROCESSED));
   if (status === 'pending_review') {
     thread.addLabel(GmailApp.getUserLabelByName(LABEL_PENDING));

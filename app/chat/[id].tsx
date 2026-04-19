@@ -186,14 +186,15 @@ const s = StyleSheet.create({
   headerInfo: { flex: 1 },
   headerName: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text },
   headerSub: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 1 },
-  messages: { padding: SPACING.base, gap: SPACING.sm, paddingBottom: SPACING.xl },
+  messages: { flexGrow: 1, justifyContent: 'flex-end', paddingHorizontal: SPACING.base, paddingVertical: SPACING.base, gap: SPACING.sm, paddingBottom: SPACING.sm },
   bubble: {
-    maxWidth: '78%', borderRadius: RADIUS.xl,
+    maxWidth: '72%', borderRadius: RADIUS.xl,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.base,
+    flexShrink: 1,
   },
   bubbleMe: {
     alignSelf: 'flex-end', backgroundColor: COLORS.primary,
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: 4, marginRight: 2,
   },
   bubbleOther: {
     alignSelf: 'flex-start', backgroundColor: COLORS.white,
@@ -215,7 +216,7 @@ const s = StyleSheet.create({
   input: {
     flex: 1, backgroundColor: COLORS.background, borderRadius: RADIUS.xl,
     paddingVertical: SPACING.sm, paddingHorizontal: SPACING.base,
-    fontSize: FONTS.sizes.base, color: COLORS.text, maxHeight: 120,
+    fontSize: Platform.OS === 'web' ? 16 : FONTS.sizes.base, color: COLORS.text, maxHeight: 120,
     borderWidth: 1.5, borderColor: COLORS.border,
   },
   sendBtn: {

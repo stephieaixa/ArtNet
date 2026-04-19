@@ -41,6 +41,10 @@ export default function RootLayout() {
           avatar_url: session.user.user_metadata?.avatar_url,
           created_at: session.user.created_at,
         });
+        // Navigate to tabs on sign-in (handles email confirmation redirect)
+        if (event === 'SIGNED_IN') {
+          router.replace('/(tabs)');
+        }
       } else {
         setUser(null);
       }

@@ -9,16 +9,61 @@ import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useDiscoverStore } from '../../../src/stores/discoverStore';
+import { useLanguageStore } from '../../../src/stores/languageStore';
+import { translateBatch } from '../../../src/services/translate';
 import { COLORS, FONTS, SPACING, RADIUS, HEADER_TOP } from '../../../src/constants/theme';
 import { VENUE_TYPES } from '../../../src/constants/venueTypes';
 import { DISCIPLINES } from '../../../src/constants/disciplines';
 import FilterModal, { FilterState } from '../../../src/components/shared/FilterModal';
 import SuggestSourceModal from '../../../src/components/shared/SuggestSourceModal';
-import { fetchJobs, type ScrapedJob } from '../../../src/services/jobs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchJobs, archiveExpiredJobs, type ScrapedJob } from '../../../src/services/jobs';
 import { supabase } from '../../../src/services/supabase';
 import type { JobPost } from '../../../src/types';
 
-const ADMIN_EMAIL = 'artnetcircus@gmail.com';
+const ADMIN_EMAIL = 'circusworldlife@gmail.com';
+
+type ArtistProfile = {
+  user_id: string;
+  display_name: string;
+  bio?: string;
+  city?: string;
+  country?: string;
+  disciplines?: string[];
+  avatar_url?: string;
+};
+
+function ArtistCard({ profile }: { profile: ArtistProfile }) {
+  const initial = profile.display_name?.[0]?.toUpperCase() ?? '?';
+  const discs = (profile.disciplines ?? []).slice(0, 3);
+  return (
+    <TouchableOpacity
+      style={styles.artistCard}
+      activeOpacity={0.85}
+      onPress={() => router.push(`/artists/${profile.user_id}` as any)}
+    >
+      <View style={styles.artistAvatar}>
+        {profile.avatar_url
+          ? <Image source={{ uri: profile.avatar_url }} style={styles.artistAvatarImage} />
+          : <Text style={styles.artistAvatarText}>{initial}</Text>
+        }
+      </View>
+      <View style={styles.artistInfo}>
+        <Text style={styles.artistName}>{profile.display_name}</Text>
+        {(profile.city || profile.country) && (
+          <Text style={styles.artistLocation}>📍 {[profile.city, profile.country].filter(Boolean).join(', ')}</Text>
+        )}
+        {discs.length > 0 && (
+          <View style={styles.artistDisciplinesRow}>
+            {discs.map(d => <Text key={d} style={styles.artistChip}>{d}</Text>)}
+          </View>
+        )}
+        {profile.bio ? <Text style={styles.artistBio} numberOfLines={2}>{profile.bio}</Text> : null}
+      </View>
+      <Text style={styles.artistArrow}>›</Text>
+    </TouchableOpacity>
+  );
+}
 
 
 
@@ -38,8 +83,10 @@ function timeAgo(dateStr: string, today: string, yesterday: string, daysAgoFn: (
   return daysAgoFn(days);
 }
 
-function JobCard({ job, selecting = false, isSelected = false, onSelect, onLongPress }: {
+function JobCard({ job, translatedTitle, translatedDesc, selecting = false, isSelected = false, onSelect, onLongPress }: {
   job: JobPost;
+  translatedTitle?: string;
+  translatedDesc?: string;
   selecting?: boolean;
   isSelected?: boolean;
   onSelect?: () => void;
@@ -81,7 +128,7 @@ function JobCard({ job, selecting = false, isSelected = false, onSelect, onLongP
         )}
       </View>
 
-      <Text style={styles.jobTitle}>{job.title}</Text>
+      <Text style={styles.jobTitle}>{translatedTitle ?? job.title}</Text>
 
       <View style={styles.venueRow}>
         <Text style={styles.venueName}>{job.venue?.name}</Text>
@@ -90,7 +137,7 @@ function JobCard({ job, selecting = false, isSelected = false, onSelect, onLongP
         <Text style={styles.location}>{job.location_city}, {job.location_country}</Text>
       </View>
 
-      <Text style={styles.description} numberOfLines={2}>{job.description}</Text>
+      <Text style={styles.description} numberOfLines={2}>{translatedDesc ?? job.description}</Text>
 
       <View style={styles.disciplineTags}>
         {job.disciplines_needed.slice(0, 3).map(d => {
@@ -149,6 +196,7 @@ function adaptScrapedJob(j: ScrapedJob): JobPost {
       verified: false, created_at: '', updated_at: '',
     },
     // Extra fields for scraped jobs
+    _translations: (j as any).translations,
     _source_name: j.source_name,
     _source_url: j.source_url,
     _contact_url: j.contact_url,
@@ -162,6 +210,10 @@ export default function DiscoverScreen() {
   const { t } = useTranslation();
   const { user } = useAuthStore();
   const { filters, search, setFilters, setSearch } = useDiscoverStore();
+  const { targetLanguage } = useLanguageStore();
+  const isDefaultLang = targetLanguage === 'Español';
+  const [titleMap, setTitleMap] = useState<Record<string, string>>({});
+  const [descMap, setDescMap] = useState<Record<string, string>>({});
   const [showFilters, setShowFilters] = useState(false);
   const [showFabMenu, setShowFabMenu] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
@@ -173,16 +225,26 @@ export default function DiscoverScreen() {
   const [showSearch, setShowSearch] = useState(false);
   const [pendingJobs, setPendingJobs] = useState<any[]>([]);
   const [showPending, setShowPending] = useState(false);
+  const [artists, setArtists] = useState<ArtistProfile[]>([]);
+  const [artistsLoading, setArtistsLoading] = useState(false);
   const flatListRef = useRef<any>(null);
+  const scrollOffsetRef = useRef(0);
 
   useFocusEffect(useCallback(() => {
-    // Re-enable scroll after returning from a detail screen
-    flatListRef.current?.scrollToOffset?.({ offset: 0, animated: false });
+    // Restore scroll position when returning from a detail screen
+    const offset = scrollOffsetRef.current;
+    if (offset <= 0) return;
+    // Intentar en dos momentos: inmediato y luego de un render completo
+    const t1 = setTimeout(() => flatListRef.current?.scrollToOffset?.({ offset, animated: false }), 100);
+    const t2 = setTimeout(() => flatListRef.current?.scrollToOffset?.({ offset, animated: false }), 350);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []));
   const isArtist = user?.role !== 'venue';
   const isAdmin = user?.email === ADMIN_EMAIL;
 
-  const activeFilterCount = filters.venueTypes.length + filters.regions.length + filters.countries.length + filters.genres.length + filters.disciplines.length;
+  const activeFilterCount =
+    filters.venueTypes.length + filters.regions.length + filters.countries.length +
+    filters.genres.length + filters.disciplines.length + filters.months.length;
 
   function toggleSelect(id: string) {
     setSelected(prev => {
@@ -209,12 +271,14 @@ export default function DiscoverScreen() {
     ]);
   }
 
-  // Cargar pending_review para admin
+  // Cargar pending_review para admin + auto-archivar expirados
   useEffect(() => {
     if (!isAdmin) return;
     supabase.from('scraped_jobs').select('id,title,venue_name,contact_email,location_city,location_country,description')
       .eq('status', 'pending_review').order('scraped_at', { ascending: false })
       .then(({ data }) => setPendingJobs(data ?? []));
+    // Limpiar silenciosamente los expirados al abrir la app
+    archiveExpiredJobs().catch(() => {});
   }, [isAdmin]);
 
   async function approveJob(id: string) {
@@ -246,6 +310,87 @@ export default function DiscoverScreen() {
     return () => { cancelled = true; };
   }, [filters, search]);
 
+  // Translate job titles + descriptions when language or jobs change — with AsyncStorage cache
+  useEffect(() => {
+    if (isDefaultLang || !liveJobs.length) {
+      setTitleMap({});
+      setDescMap({});
+      return;
+    }
+
+    let cancelled = false;
+    const cacheKey = `artnet_content_cache_${targetLanguage.toLowerCase().replace(/\s+/g, '_')}`;
+
+    (async () => {
+      // 1. Load cache
+      let cachedMap: Record<string, { title: string; description: string }> = {};
+      try {
+        const raw = await AsyncStorage.getItem(cacheKey);
+        if (raw) cachedMap = JSON.parse(raw);
+      } catch {}
+      if (cancelled) return;
+
+      // 2. Show cached translations immediately
+      if (Object.keys(cachedMap).length > 0 && !cancelled) {
+        const titles: Record<string, string> = {};
+        const descs: Record<string, string> = {};
+        for (const [id, val] of Object.entries(cachedMap)) {
+          titles[id] = val.title;
+          descs[id] = val.description;
+        }
+        setTitleMap(titles);
+        setDescMap(descs);
+      }
+
+      // 3. Find uncached jobs
+      const needsBatch = liveJobs.filter(j => !cachedMap[j.id]);
+      if (!needsBatch.length || cancelled) return;
+
+      // 4. Translate in chunks of 10 (titles + descriptions per job)
+      const CHUNK = 10;
+      const allNew: Record<string, { title: string; description: string }> = {};
+      for (let i = 0; i < needsBatch.length; i += CHUNK) {
+        if (cancelled) break;
+        const chunk = needsBatch.slice(i, i + CHUNK).map(j => ({
+          id: j.id, title: j.title, description: j.description,
+        }));
+        const result = await translateBatch(chunk, targetLanguage);
+        if (cancelled) break;
+        if (result && Object.keys(result).length > 0) {
+          const newTitles: Record<string, string> = {};
+          const newDescs: Record<string, string> = {};
+          for (const [id, val] of Object.entries(result)) {
+            allNew[id] = val;
+            newTitles[id] = val.title;
+            newDescs[id] = val.description;
+          }
+          setTitleMap(prev => ({ ...prev, ...newTitles }));
+          setDescMap(prev => ({ ...prev, ...newDescs }));
+        }
+      }
+
+      // 5. Persist to cache
+      if (Object.keys(allNew).length > 0) {
+        AsyncStorage.setItem(cacheKey, JSON.stringify({ ...cachedMap, ...allNew })).catch(() => {});
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [liveJobs, targetLanguage]);
+
+  // Fetch artist profiles when user is a venue
+  useEffect(() => {
+    if (isArtist) return;
+    setArtistsLoading(true);
+    supabase
+      .from('artist_profiles')
+      .select('user_id, display_name, bio, city, country, disciplines, avatar_url')
+      .not('display_name', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(100)
+      .then(({ data }) => { setArtists(data ?? []); setArtistsLoading(false); });
+  }, [isArtist]);
+
   const filtered = liveJobs;
 
   return (
@@ -270,7 +415,10 @@ export default function DiscoverScreen() {
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.avatarBtn} onPress={() => router.push('/(tabs)/profile')}>
-            <Text style={styles.avatarText}>{user?.email?.[0]?.toUpperCase() ?? '?'}</Text>
+            {user?.avatar_url
+              ? <Image source={{ uri: user.avatar_url }} style={styles.avatarImage} />
+              : <Text style={styles.avatarText}>{user?.email?.[0]?.toUpperCase() ?? '?'}</Text>
+            }
           </TouchableOpacity>
         </View>
       </View>
@@ -283,8 +431,8 @@ export default function DiscoverScreen() {
       )}
 
 
-      {/* Community card — fuente + mail */}
-      {showSourcesBanner && (
+      {/* Community card — fuente + mail (artists only) */}
+      {isArtist && showSourcesBanner && (
         <View style={styles.communityCard}>
           <TouchableOpacity style={styles.communityMain} onPress={() => setShowSuggest(true)} activeOpacity={0.85}>
             <Text style={styles.communityEmoji}>🔍</Text>
@@ -355,8 +503,29 @@ export default function DiscoverScreen() {
         </View>
       ))}
 
-      {/* Filter + search bar */}
-      <View style={styles.resultsRow}>
+      {/* Venue view: artist profiles */}
+      {!isArtist && (
+        <FlatList
+          data={artists}
+          keyExtractor={item => item.user_id}
+          renderItem={({ item }) => <ArtistCard profile={item} />}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <Text style={styles.artistsCount}>
+              {artistsLoading ? '…' : `${artists.length} artistas`}
+            </Text>
+          }
+          ListEmptyComponent={
+            artistsLoading
+              ? <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
+              : <View style={styles.empty}><Text style={styles.emptyEmoji}>🎭</Text><Text style={styles.emptyText}>No hay perfiles aún</Text></View>
+          }
+        />
+      )}
+
+      {/* Filter + search bar (artists only) */}
+      {isArtist && <View style={styles.resultsRow}>
         {showSearch ? (
           <>
             <TextInput
@@ -398,18 +567,17 @@ export default function DiscoverScreen() {
             </View>
           </>
         )}
-      </View>
+      </View>}
 
-
-      <FilterModal
+      {isArtist && <FilterModal
         visible={showFilters}
         onClose={() => setShowFilters(false)}
         onApply={(f) => setFilters(f)}
         initialFilters={filters}
-      />
+      />}
 
-      {/* Job list */}
-      <FlatList
+      {/* Job list (artists only) */}
+      {isArtist && <FlatList
         ref={flatListRef}
         data={(() => {
           if (filtered.length <= 5) return filtered;
@@ -432,6 +600,8 @@ export default function DiscoverScreen() {
           return (
           <JobCard
             job={item}
+            translatedTitle={titleMap[item.id]}
+            translatedDesc={descMap[item.id]}
             selecting={selecting}
             isSelected={selected.has(item.id)}
             onSelect={() => toggleSelect(item.id)}
@@ -445,23 +615,24 @@ export default function DiscoverScreen() {
         }}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        onScroll={({ nativeEvent }) => { scrollOffsetRef.current = nativeEvent.contentOffset.y; }}
+        scrollEventThrottle={16}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>🎭</Text>
             <Text style={styles.emptyText}>{t('discover.noResults')}</Text>
           </View>
         }
-      />
+      />}
 
-      <SuggestSourceModal visible={showSuggest} onClose={() => setShowSuggest(false)} />
+      {isArtist && <SuggestSourceModal visible={showSuggest} onClose={() => setShowSuggest(false)} />}
 
-      {/* FAB menu backdrop */}
-      {showFabMenu && (
+      {/* FAB (artists only) */}
+      {isArtist && showFabMenu && (
         <TouchableOpacity style={styles.fabBackdrop} activeOpacity={1} onPress={() => setShowFabMenu(false)} />
       )}
 
-      {/* FAB menu options */}
-      {showFabMenu && (
+      {isArtist && showFabMenu && (
         <View style={styles.fabMenu}>
           <TouchableOpacity style={styles.fabMenuItem} onPress={() => { setShowFabMenu(false); router.push('/post/manual'); }}>
             <Text style={styles.fabMenuEmoji}>📋</Text>
@@ -487,14 +658,15 @@ export default function DiscoverScreen() {
         </View>
       )}
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, showFabMenu && styles.fabOpen]}
-        activeOpacity={0.85}
-        onPress={() => setShowFabMenu(v => !v)}
-      >
-        <Text style={[styles.fabText, showFabMenu && styles.fabTextOpen]}>{showFabMenu ? '✕' : '+'}</Text>
-      </TouchableOpacity>
+      {isArtist && (
+        <TouchableOpacity
+          style={[styles.fab, showFabMenu && styles.fabOpen]}
+          activeOpacity={0.85}
+          onPress={() => setShowFabMenu(v => !v)}
+        >
+          <Text style={[styles.fabText, showFabMenu && styles.fabTextOpen]}>{showFabMenu ? '✕' : '+'}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -527,9 +699,11 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: COLORS.primary,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  avatarImage: { width: 40, height: 40, borderRadius: 20 },
   avatarText: {
     color: COLORS.white,
     fontWeight: '700',
@@ -890,6 +1064,35 @@ const styles = StyleSheet.create({
   suggestCtaTitle: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.primary, marginBottom: 2 },
   suggestCtaSub: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, lineHeight: 16 },
   suggestCtaArrow: { fontSize: 18, color: COLORS.primary, fontWeight: '700' },
+  artistsCount: {
+    fontSize: FONTS.sizes.sm, color: COLORS.textMuted, fontWeight: '600',
+    paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm,
+  },
+  artistCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.white, borderRadius: RADIUS.lg,
+    marginHorizontal: SPACING.sm, marginBottom: SPACING.sm,
+    padding: SPACING.base, gap: SPACING.md,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  artistAvatar: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center',
+    flexShrink: 0,
+  },
+  artistAvatarImage: { width: 52, height: 52, borderRadius: 26 },
+  artistAvatarText: { fontSize: 22, color: COLORS.white, fontWeight: '700' },
+  artistInfo: { flex: 1, gap: 3 },
+  artistName: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text },
+  artistLocation: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
+  artistDisciplinesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 2 },
+  artistChip: {
+    fontSize: 11, color: COLORS.primary, fontWeight: '600',
+    backgroundColor: '#F0EAFF', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,
+  },
+  artistBio: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, lineHeight: 16, marginTop: 2 },
+  artistArrow: { fontSize: 22, color: COLORS.textMuted },
   fab: {
     position: 'absolute',
     bottom: 24,

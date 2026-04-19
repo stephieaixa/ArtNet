@@ -1026,6 +1026,7 @@ const REGIONS = ['Todas', 'Europa', 'América Latina', 'América del Norte', 'As
 
 export default function DirectorioScreen() {
   const [search, setSearch] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
   const [activeVenueType, setActiveVenueType] = useState('all');
   const [activeRegion, setActiveRegion] = useState('Todas');
   const [selected, setSelected] = useState<Contact | null>(null);
@@ -1052,18 +1053,7 @@ export default function DirectorioScreen() {
         <Text style={styles.subtitle}>Venues, festivales y productoras</Text>
       </View>
 
-      <View style={styles.searchBox}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar por nombre o país..."
-          value={search}
-          onChangeText={setSearch}
-          placeholderTextColor={COLORS.textMuted}
-        />
-      </View>
-
-      {/* Filters — collapsible */}
+      {/* Filters + search inline */}
       {(() => {
         const activeCount = (activeRegion !== 'Todas' ? 1 : 0) + (activeVenueType !== 'all' ? 1 : 0) + (activeDiscipline ? 1 : 0);
         const vt = VENUE_TYPES.find(v => v.id === activeVenueType);
@@ -1071,32 +1061,50 @@ export default function DirectorioScreen() {
         return (
           <View style={styles.filtersSection}>
             {/* Header row */}
-            <TouchableOpacity style={styles.filterToggleRow} onPress={() => setFiltersOpen(v => !v)} activeOpacity={0.7}>
-              <View style={styles.filterToggleLeft}>
-                <Text style={styles.filterToggleLabel}>Filtros</Text>
-                {activeCount > 0 && (
-                  <View style={styles.filterBadge}>
-                    <Text style={styles.filterBadgeText}>{activeCount}</Text>
-                  </View>
-                )}
-                {/* Active filter pills when collapsed */}
-                {!filtersOpen && activeCount > 0 && (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ flexDirection: 'row', gap: 4 }}>
-                    {activeRegion !== 'Todas' && <Text style={styles.activeFilterPill}>{activeRegion}</Text>}
-                    {vt && <Text style={styles.activeFilterPill}>{vt.emoji} {vt.label}</Text>}
-                    {disc && <Text style={styles.activeFilterPill}>{disc.label}</Text>}
-                  </ScrollView>
-                )}
-              </View>
+            <View style={styles.filterToggleRow}>
+              {showSearch ? (
+                <TextInput
+                  style={styles.inlineSearchInput}
+                  placeholder="Buscar por nombre o país..."
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholderTextColor={COLORS.textMuted}
+                  autoFocus
+                />
+              ) : (
+                <TouchableOpacity style={styles.filterToggleLeft} onPress={() => setFiltersOpen(v => !v)} activeOpacity={0.7}>
+                  <Text style={styles.filterToggleLabel}>Filtros</Text>
+                  {activeCount > 0 && (
+                    <View style={styles.filterBadge}>
+                      <Text style={styles.filterBadgeText}>{activeCount}</Text>
+                    </View>
+                  )}
+                  {!filtersOpen && activeCount > 0 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ flexDirection: 'row', gap: 4 }}>
+                      {activeRegion !== 'Todas' && <Text style={styles.activeFilterPill}>{activeRegion}</Text>}
+                      {vt && <Text style={styles.activeFilterPill}>{vt.emoji} {vt.label}</Text>}
+                      {disc && <Text style={styles.activeFilterPill}>{disc.label}</Text>}
+                    </ScrollView>
+                  )}
+                </TouchableOpacity>
+              )}
               <View style={styles.filterToggleRight}>
-                {activeCount > 0 && (
+                {!showSearch && activeCount > 0 && (
                   <TouchableOpacity onPress={() => { setActiveRegion('Todas'); setActiveVenueType('all'); setActiveDiscipline(''); }} style={styles.clearBtn}>
                     <Text style={styles.clearBtnText}>Limpiar</Text>
                   </TouchableOpacity>
                 )}
-                <Text style={styles.filterArrow}>{filtersOpen ? '▲' : '▼'}</Text>
+                <TouchableOpacity
+                  onPress={() => { setShowSearch(v => !v); if (showSearch) setSearch(''); }}
+                  style={styles.searchIconBtn}
+                >
+                  <Text style={[styles.searchIconBtnText, showSearch && styles.searchIconBtnActive]}>
+                    {showSearch ? '✕' : '🔍'}
+                  </Text>
+                </TouchableOpacity>
+                {!showSearch && <Text style={styles.filterArrow} onPress={() => setFiltersOpen(v => !v)}>{filtersOpen ? '▲' : '▼'}</Text>}
               </View>
-            </TouchableOpacity>
+            </View>
 
             {/* Expandable content */}
             {filtersOpen && (
@@ -1337,13 +1345,13 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: SPACING.xl, paddingTop: HEADER_TOP, paddingBottom: SPACING.sm },
   title: { fontSize: FONTS.sizes.xxl, fontWeight: '800', color: COLORS.text },
   subtitle: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, marginTop: 2 },
-  searchBox: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg, marginHorizontal: SPACING.xl, marginBottom: SPACING.sm,
-    paddingHorizontal: SPACING.base, borderWidth: 1.5, borderColor: COLORS.border,
+  inlineSearchInput: {
+    flex: 1, fontSize: FONTS.sizes.sm, color: COLORS.text,
+    paddingVertical: 0,
   },
-  searchIcon: { fontSize: 16, marginRight: SPACING.sm },
-  searchInput: { flex: 1, padding: SPACING.base, fontSize: 16, color: COLORS.text },
+  searchIconBtn: { padding: 4, marginLeft: 6 },
+  searchIconBtnText: { fontSize: 16 },
+  searchIconBtnActive: { fontSize: 14, color: COLORS.textMuted },
   filtersSection: {
     backgroundColor: COLORS.white,
     borderTopWidth: 1,

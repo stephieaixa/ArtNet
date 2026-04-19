@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator, Linking, Share, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator, Linking, Share, Platform, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -25,6 +25,8 @@ export default function ProfileScreen() {
   const { targetLanguage, isTranslating, setTargetLanguage } = useLanguageStore();
   const { user, setUser, reset } = useAuthStore();
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+  const [showLangModal, setShowLangModal] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [profileComplete, setProfileComplete] = useState(false);
   const [profileChecked, setProfileChecked] = useState(false);
@@ -55,7 +57,7 @@ export default function ProfileScreen() {
       });
   }, [user?.id]);
 
-  async function handleAvatarPress() {
+  async function pickAndUploadAvatar() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert(t('common.permissionNeeded'), t('profile.galleryPermission'));
@@ -74,14 +76,12 @@ export default function ProfileScreen() {
     setUploadingAvatar(true);
     try {
       const asset = result.assets[0];
-      // Derive ext from mimeType (safe for blob URLs on web)
       const mime = asset.mimeType ?? 'image/jpeg';
       let ext = mime.split('/')[1] ?? 'jpg';
       if (ext === 'jpeg') ext = 'jpg';
       const contentType = `image/${ext}`;
       const fileName = `${user!.id}/avatar.${ext}`;
 
-      // Upload direct via REST API — most reliable on iOS Safari web
       const fileRes = await fetch(asset.uri);
       const blob = await fileRes.blob();
       const { data: { session } } = await supabase.auth.getSession();
@@ -101,10 +101,31 @@ export default function ProfileScreen() {
       const { data } = supabase.storage.from('Avatars').getPublicUrl(fileName);
       const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
       await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
+      await supabase.from('artist_profiles').update({ avatar_url: avatarUrl }).eq('user_id', user!.id);
       setUser({ ...user!, avatar_url: avatarUrl });
     } catch (err: any) {
       Alert.alert(t('common.error'), err?.message ?? t('profile.photoError'));
       console.error('[avatar] Upload error:', err);
+    }
+    setUploadingAvatar(false);
+  }
+
+  function handleAvatarPress() {
+    if (user?.avatar_url) {
+      setShowAvatarMenu(true);
+    } else {
+      pickAndUploadAvatar();
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    setShowAvatarMenu(false);
+    setUploadingAvatar(true);
+    try {
+      await supabase.auth.updateUser({ data: { avatar_url: null } });
+      setUser({ ...user!, avatar_url: undefined });
+    } catch (err: any) {
+      Alert.alert(t('common.error'), err?.message ?? t('profile.photoError'));
     }
     setUploadingAvatar(false);
   }
@@ -273,43 +294,84 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      {/* Language selector — chip grid, no text input */}
+      {/* Language selector — dropdown */}
       <View style={styles.section}>
-        <View style={styles.langHeader}>
+        <TouchableOpacity
+          style={styles.langRow}
+          onPress={() => !isTranslating && setShowLangModal(true)}
+          activeOpacity={0.7}
+          disabled={isTranslating}
+        >
           <Text style={styles.menuEmoji}>🌐</Text>
           <View style={{ flex: 1 }}>
             <Text style={styles.menuLabel}>{t('profile.language')}</Text>
             <Text style={styles.langCurrentText}>
-              {isTranslating ? 'Traduciendo…' : targetLanguage}
+              {isTranslating ? t('language.translating') : targetLanguage}
             </Text>
           </View>
-          {isTranslating && <ActivityIndicator size="small" color={COLORS.primary} />}
-        </View>
-        <View style={styles.langChipGrid}>
-          {LANG_SUGGESTIONS.map(l => {
-            const active = targetLanguage === l.name;
-            return (
-              <TouchableOpacity
-                key={l.name}
-                style={[styles.langChip, active && styles.langChipActive]}
-                onPress={async () => {
-                  if (active || isTranslating) return;
-                  const ok = await setTargetLanguage(l.name);
-                  if (!ok) Alert.alert('Error', 'No se pudo traducir. Verificá tu conexión.');
-                }}
-                activeOpacity={0.75}
-                disabled={isTranslating}
-              >
-                <Text style={styles.langChipFlag}>{l.flag}</Text>
-                <Text style={[styles.langChipName, active && styles.langChipNameActive]}>{l.name}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        <Text style={styles.langHint}>
-          Inglés y Francés cambian al instante. Otros idiomas usan IA (puede tardar unos segundos).
-        </Text>
+          {isTranslating
+            ? <ActivityIndicator size="small" color={COLORS.primary} />
+            : <Text style={styles.menuArrow}>›</Text>
+          }
+        </TouchableOpacity>
       </View>
+
+      {/* Avatar action menu */}
+      <Modal visible={showAvatarMenu} transparent animationType="slide" onRequestClose={() => setShowAvatarMenu(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowAvatarMenu(false)}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>📷 Foto de perfil</Text>
+            <TouchableOpacity
+              style={styles.langOption}
+              activeOpacity={0.7}
+              onPress={() => { setShowAvatarMenu(false); pickAndUploadAvatar(); }}
+            >
+              <Text style={styles.langOptionFlag}>🖼️</Text>
+              <Text style={styles.langOptionName}>Cambiar foto</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.langOption}
+              activeOpacity={0.7}
+              onPress={handleRemoveAvatar}
+            >
+              <Text style={styles.langOptionFlag}>🗑️</Text>
+              <Text style={[styles.langOptionName, { color: COLORS.error }]}>Eliminar foto</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Language picker modal */}
+      <Modal visible={showLangModal} transparent animationType="slide" onRequestClose={() => setShowLangModal(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowLangModal(false)}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>{t('language.select')}</Text>
+            {LANG_SUGGESTIONS.map(l => {
+              const active = targetLanguage === l.name;
+              return (
+                <TouchableOpacity
+                  key={l.name}
+                  style={[styles.langOption, active && styles.langOptionActive]}
+                  activeOpacity={0.7}
+                  onPress={async () => {
+                    setShowLangModal(false);
+                    if (active) return;
+                    const ok = await setTargetLanguage(l.name);
+                    if (!ok) Alert.alert(t('common.error'), t('language.translationError'));
+                  }}
+                >
+                  <Text style={styles.langOptionFlag}>{l.flag}</Text>
+                  <Text style={[styles.langOptionName, active && styles.langOptionNameActive]}>{l.name}</Text>
+                  {active && <Text style={styles.langCheck}>✓</Text>}
+                </TouchableOpacity>
+              );
+            })}
+            <Text style={styles.langHint}>{t('language.hint')}</Text>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
         <Text style={styles.logoutText}>{t('profile.logout')}</Text>
@@ -384,24 +446,40 @@ const styles = StyleSheet.create({
   menuLabel: { flex: 1, fontSize: FONTS.sizes.base, color: COLORS.text, fontWeight: '500' },
   menuArrow: { fontSize: 20, color: COLORS.textMuted },
   langCurrentText: { fontSize: FONTS.sizes.xs, color: COLORS.primary, fontWeight: '600', marginTop: 1 },
-  langHeader: {
+  langRow: {
     flexDirection: 'row', alignItems: 'center', padding: SPACING.base,
     borderTopWidth: 1, borderTopColor: COLORS.borderLight, gap: SPACING.md,
   },
-  langChipGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm,
-    paddingHorizontal: SPACING.base, paddingBottom: SPACING.sm,
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end',
   },
-  langChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderWidth: 1.5, borderColor: COLORS.border, borderRadius: RADIUS.full,
-    paddingVertical: 7, paddingHorizontal: SPACING.sm, backgroundColor: COLORS.background,
+  modalSheet: {
+    backgroundColor: COLORS.white, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: 32, paddingTop: SPACING.sm,
   },
-  langChipActive: { borderColor: COLORS.primary, backgroundColor: '#EDE9FE' },
-  langChipFlag: { fontSize: 18 },
-  langChipName: { fontSize: FONTS.sizes.sm, fontWeight: '600', color: COLORS.textSecondary },
-  langChipNameActive: { color: COLORS.primary },
-  langHint: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, paddingHorizontal: SPACING.base, paddingBottom: SPACING.sm, lineHeight: 16 },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.border,
+    alignSelf: 'center', marginBottom: SPACING.base,
+  },
+  modalTitle: {
+    fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.8,
+    paddingHorizontal: SPACING.xl, paddingBottom: SPACING.sm,
+  },
+  langOption: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    paddingVertical: 14, paddingHorizontal: SPACING.xl,
+    borderTopWidth: 1, borderTopColor: COLORS.borderLight,
+  },
+  langOptionActive: { backgroundColor: '#F5F3FF' },
+  langOptionFlag: { fontSize: 24 },
+  langOptionName: { flex: 1, fontSize: FONTS.sizes.base, fontWeight: '500', color: COLORS.text },
+  langOptionNameActive: { color: COLORS.primary, fontWeight: '700' },
+  langCheck: { fontSize: 16, color: COLORS.primary, fontWeight: '700' },
+  langHint: {
+    fontSize: FONTS.sizes.xs, color: COLORS.textMuted,
+    paddingHorizontal: SPACING.xl, paddingTop: SPACING.base, lineHeight: 16,
+  },
   logoutBtn: {
     marginHorizontal: SPACING.xl, marginTop: SPACING.md, padding: SPACING.base,
     borderRadius: RADIUS.lg, backgroundColor: '#FEF2F2', alignItems: 'center',
