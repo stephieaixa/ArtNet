@@ -63,6 +63,91 @@ const SEARCH_QUERIES = [
   // ── Instagram vía Google ──
   { q: `site:instagram.com "circus" "audition" OR "casting" performer ${YEARS}`, lang: 'en' },
   { q: `site:instagram.com "circo" "audición" OR "casting" artista ${YEARS}`, lang: 'es' },
+
+  // ── SUDAMÉRICA — Argentina ──
+  { q: `circo argentina audición convocatoria artistas ${YEARS}`, lang: 'es', gl: 'ar' },
+  { q: `"buscamos" OR "se busca" artista circo acróbata argentina ${YEARS}`, lang: 'es', gl: 'ar' },
+  { q: `trapecista malabarista contorcionista trabajo argentina ${YEARS}`, lang: 'es', gl: 'ar' },
+  { q: `site:facebook.com circo argentina "se busca" OR "convocatoria" OR "audición" ${YEARS}`, lang: 'es', gl: 'ar' },
+  { q: `compañía circo teatro físico argentina convocatoria ${YEARS}`, lang: 'es', gl: 'ar' },
+  { q: `"iNTeatro" OR "Fondo Nacional de las Artes" circo convocatoria ${YEARS}`, lang: 'es', gl: 'ar' },
+
+  // ── SUDAMÉRICA — Brasil ──
+  { q: `circo brasil audição convocatória artistas ${YEARS}`, lang: 'pt', gl: 'br' },
+  { q: `"procura-se" artista circo acrobata malabarista brasil ${YEARS}`, lang: 'pt', gl: 'br' },
+  { q: `site:facebook.com circo brasil "seleção" OR "audição" OR "procura-se" ${YEARS}`, lang: 'pt', gl: 'br' },
+  { q: `Funarte circo convocatoria edital ${YEARS}`, lang: 'pt', gl: 'br' },
+  { q: `circo contemporaneo brasil contratação artistas ${YEARS}`, lang: 'pt', gl: 'br' },
+
+  // ── SUDAMÉRICA — Colombia, Chile, Uruguay, Perú ──
+  { q: `circo colombia convocatoria artistas audición ${YEARS}`, lang: 'es', gl: 'co' },
+  { q: `circo chile convocatoria artistas ${YEARS}`, lang: 'es', gl: 'cl' },
+  { q: `site:facebook.com circo chile colombia peru "se busca" artista ${YEARS}`, lang: 'es' },
+  { q: `artes escénicas circo convocatoria latinoamerica ${YEARS}`, lang: 'es' },
+  { q: `"ministerio de cultura" circo artistas convocatoria ${YEARS} argentina OR chile OR colombia OR peru OR uruguay`, lang: 'es' },
+  { q: `"FONDART" circo artes escénicas convocatoria ${YEARS}`, lang: 'es', gl: 'cl' },
+  { q: `circo mexico convocatoria artistas audicion ${YEARS}`, lang: 'es', gl: 'mx' },
+  { q: `site:facebook.com circo mexico venezuela "se busca" artista ${YEARS}`, lang: 'es' },
+
+  // ── JAPÓN ──
+  { q: `japan circus acrobat performer audition job ${YEARS}`, lang: 'en', gl: 'jp' },
+  { q: `"Tokyo DisneySea" OR "Universal Studios Japan" OR "Huis Ten Bosch" entertainer performer acrobat ${YEARS}`, lang: 'en' },
+  { q: `"Wonder Osaka" OR "Kinoshita Circus" OR "Kirin Kids Circus" audition performer ${YEARS}`, lang: 'en' },
+  { q: `japan "dinner show" OR "theme park" acrobat circus entertainer hiring ${YEARS}`, lang: 'en', gl: 'jp' },
+  { q: `サーカス 募集 アクロバット パフォーマー ${CURRENT_YEAR}`, lang: 'ja', gl: 'jp' },
+
+  // ── CHINA / EAST ASIA ──
+  { q: `china circus acrobat performer job audition international ${YEARS}`, lang: 'en', gl: 'cn' },
+  { q: `"Shanghai Circus World" OR "Beijing Acrobatic Troupe" OR "Guangzhou" acrobat audition ${YEARS}`, lang: 'en' },
+  { q: `china resort hotel entertainer acrobat circus performer hiring ${YEARS}`, lang: 'en' },
+  { q: `"Cirque du Soleil" china asia casting audition performer ${YEARS}`, lang: 'en' },
+  { q: `korea circus acrobat performer audition job ${YEARS}`, lang: 'en', gl: 'kr' },
+  { q: `"Everland" OR "Lotte World" OR "Seoul" entertainer acrobat circus performer ${YEARS}`, lang: 'en' },
+  { q: `site:facebook.com china OR korea OR japan circus acrobat audition ${YEARS}`, lang: 'en' },
+
+  // ── DUBAI / MEDIO ORIENTE ──
+  { q: `dubai circus performer acrobat entertainer job ${YEARS}`, lang: 'en', gl: 'ae' },
+  { q: `"Global Village Dubai" OR "Ferrari World" OR "Yas Island" OR "Atlantis" performer acrobat entertainment ${YEARS}`, lang: 'en' },
+  { q: `UAE "dinner show" OR resort circus performer entertainer hiring ${YEARS}`, lang: 'en', gl: 'ae' },
+  { q: `"Saudi Arabia" OR "Qatar" OR "Bahrain" entertainment performer acrobat circus job ${YEARS}`, lang: 'en' },
+  { q: `middle east circus entertainment performer acrobat hiring ${YEARS}`, lang: 'en' },
+  { q: `site:instagram.com dubai circus acrobat performer audition ${YEARS}`, lang: 'en' },
+
+  // ── AUSTRALIA / NUEVA ZELANDA ──
+  { q: `australia circus acrobat performer audition job ${YEARS}`, lang: 'en', gl: 'au' },
+  { q: `"Circus Oz" OR "Strut & Fret" OR "Strange Fruit" OR "Flying Fruit Fly" audition performer ${YEARS}`, lang: 'en' },
+  { q: `australia "theme park" OR resort entertainer acrobat circus ${YEARS}`, lang: 'en', gl: 'au' },
+  { q: `new zealand circus performer audition ${YEARS}`, lang: 'en', gl: 'nz' },
+
+  // ── EUROPA AMPLIADO ──
+  { q: `uk circus performer acrobat audition job ${YEARS}`, lang: 'en', gl: 'gb' },
+  { q: `"Zippos Circus" OR "Giffords Circus" OR "NoFit State" OR "Mimbre" audition ${YEARS}`, lang: 'en' },
+  { q: `germany cirque zirkus artist audition job ${YEARS}`, lang: 'de', gl: 'de' },
+  { q: `Zirkus Artist Engagement Casting ${YEARS}`, lang: 'de', gl: 'de' },
+  { q: `italia circo artista audizione lavoro ${YEARS}`, lang: 'it', gl: 'it' },
+  { q: `spain circo artista audición trabajo ${YEARS}`, lang: 'es', gl: 'es' },
+  { q: `netherlands belgium circus performer acrobat job ${YEARS}`, lang: 'en', gl: 'nl' },
+  { q: `russia circus acrobat performer audition international ${YEARS}`, lang: 'en', gl: 'ru' },
+  { q: `scandinavian circus performer acrobat norway sweden denmark ${YEARS}`, lang: 'en' },
+  { q: `site:facebook.com europe circus audition "we are looking" acrobat performer ${YEARS}`, lang: 'en' },
+
+  // ── CRUCEROS — más específico ──
+  { q: `"Costa Cruises" OR "Cunard" OR "P&O" OR "Celebrity Cruises" circus entertainer performer audition ${YEARS}`, lang: 'en' },
+  { q: `"Disney Cruise" OR "Virgin Voyages" OR "Regent Seven Seas" performer acrobat circus entertainer ${YEARS}`, lang: 'en' },
+  { q: `cruise ship entertainment company acrobat circus audition open call ${YEARS}`, lang: 'en' },
+  { q: `site:facebook.com cruise ship circus acrobat performer audition ${YEARS}`, lang: 'en' },
+
+  // ── CIRQUE DU SOLEIL & GRANDES COMPAÑÍAS ──
+  { q: `"Cirque du Soleil" audition casting acrobat performer ${YEARS}`, lang: 'en' },
+  { q: `"Cirque Dreams" OR "Feld Entertainment" OR "Big Apple Circus" audition acrobat ${YEARS}`, lang: 'en' },
+  { q: `"Compagnie Eolienne" OR "Les 7 Doigts" OR "Circa" audition performer ${YEARS}`, lang: 'en' },
+  { q: `"NoFit State" OR "Gandini Juggling" OR "Gravity & Other Myths" audition ${YEARS}`, lang: 'en' },
+
+  // ── BUSCADORES DE EMPLEO ESPECIALIZADOS ──
+  { q: `site:mandy.com circus acrobat aerial performer job ${YEARS}`, lang: 'en' },
+  { q: `site:castingcallpro.com circus acrobat aerial ${YEARS}`, lang: 'en' },
+  { q: `site:entertainerjobs.com circus acrobat ${YEARS}`, lang: 'en' },
+  { q: `"open audition" circus acrobat aerial performer ${YEARS}`, lang: 'en' },
 ];
 
 // Dominios que no vale la pena procesar (muy genéricos o irrelevantes)
@@ -78,7 +163,7 @@ function sleep(ms) {
 /**
  * Hace una búsqueda en Google vía Serper.dev y devuelve los resultados
  */
-async function searchGoogle(query, lang = 'es', num = 10) {
+async function searchGoogle(query, lang = 'es', num = 10, gl = 'us') {
   const key = process.env.SERPER_KEY;
   if (!key) return [];
 
@@ -89,7 +174,7 @@ async function searchGoogle(query, lang = 'es', num = 10) {
         'X-API-KEY': key,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ q: query, gl: 'us', hl: lang, num }),
+      body: JSON.stringify({ q: query, gl, hl: lang, num }),
     });
 
     if (!res.ok) {
@@ -151,9 +236,9 @@ export async function runGoogleSearchScraper() {
 
   let totalNew = 0;
 
-  for (const { q, lang } of SEARCH_QUERIES) {
+  for (const { q, lang, gl } of SEARCH_QUERIES) {
     console.log(`\n[google] Buscando: "${q.slice(0, 70)}..."`);
-    const results = await searchGoogle(q, lang, 10);
+    const results = await searchGoogle(q, lang, 10, gl ?? 'us');
 
     if (!results.length) {
       console.log('[google] Sin resultados');

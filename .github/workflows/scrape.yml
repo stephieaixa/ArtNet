@@ -2,14 +2,15 @@ name: ArtNet Scraper
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # 9am UTC (6am Buenos Aires / 11am Madrid)
-    - cron: '0 21 * * *'  # 9pm UTC (6pm Buenos Aires / 11pm Madrid)
+    - cron: '0 6 * * *'   # 6am UTC  (3am BA / 7am España / 2pm Tokyo)
+    - cron: '0 13 * * *'  # 1pm UTC (10am BA / 2pm España / 10pm Tokyo)
+    - cron: '0 20 * * *'  # 8pm UTC  (5pm BA / 9pm España / 5am Tokyo+1)
   workflow_dispatch:       # Manual trigger desde GitHub Actions UI
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repo
@@ -32,5 +33,4 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GROQ_KEY: ${{ secrets.GROQ_KEY }}
           SERPER_KEY: ${{ secrets.SERPER_KEY }}
-          # Opcional: mantener Gemini como fallback de extracción
           GEMINI_KEY: ${{ secrets.GEMINI_KEY }}

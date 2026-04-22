@@ -1,18 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Localization from 'expo-localization';
 import { loadLanguageBundle } from '../services/translate';
-
-const DEVICE_LANG_MAP: Record<string, string> = {
-  es: 'Español',
-  en: 'English',
-  fr: 'Français',
-  it: 'Italiano',
-  de: 'Deutsch',
-  pt: 'Português',
-  ja: '日本語',
-  ar: 'العربية',
-};
 
 type LanguageStore = {
   targetLanguage: string;   // Display name: 'Español', 'English', 'Italiano', etc.
@@ -36,16 +24,11 @@ export const useLanguageStore = create<LanguageStore>((set) => ({
   },
 }));
 
-// Restore persisted language on startup, or auto-detect device language on first launch
+// Restore persisted language on startup (async, non-blocking)
 AsyncStorage.getItem('artnet_language')
   .then((saved) => {
-    if (saved) {
+    if (saved && saved !== 'Español') {
       useLanguageStore.getState().setTargetLanguage(saved);
-    } else {
-      // First launch: use device language
-      const code = Localization.getLocales()[0]?.languageCode ?? 'es';
-      const name = DEVICE_LANG_MAP[code] ?? 'Español';
-      useLanguageStore.getState().setTargetLanguage(name);
     }
   })
   .catch(() => {});
