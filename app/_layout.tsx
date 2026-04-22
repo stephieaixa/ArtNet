@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Slot, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../src/services/supabase';
 import { useAuthStore } from '../src/stores/authStore';
 
@@ -54,9 +55,11 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="auto" />
-      <Slot />
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="auto" />
+        <Slot />
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }

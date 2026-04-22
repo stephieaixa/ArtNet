@@ -1,7 +1,31 @@
 {
   "buildCommand": "npx expo export -p web && node scripts/inject-og.mjs",
   "outputDirectory": "dist",
+  "alias": ["artnet-circus.vercel.app"],
+  "crons": [
+    {
+      "path": "/api/invite-waitlist",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/archive-jobs",
+      "schedule": "0 3 * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    }
+  ],
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/apple-touch-icon.png", "destination": "/apple-touch-icon.png" },
+    { "source": "/sw.js", "destination": "/sw.js" },
+    { "source": "/favicon.ico", "destination": "/favicon.ico" },
+    { "source": "/og-image.png", "destination": "/og-image.png" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

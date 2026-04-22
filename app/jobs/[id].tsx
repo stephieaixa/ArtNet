@@ -3,6 +3,8 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Alert, ActivityIndicator, TextInput, Modal, Image, Linking, Share, Clipboard, Platform,
 } from 'react-native';
+import { openExternalUrl } from '../../src/utils/openUrl';
+import { markJobDeleted } from '../../src/utils/feedRefresh';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +18,25 @@ import { useLanguageStore } from '../../src/stores/languageStore';
 
 const ADMIN_EMAIL = 'circusworldlife@gmail.com';
 import { VENUE_TYPES } from '../../src/constants/venueTypes';
+
+/** Decode HTML entities like &#xf3; → ó, &amp; → &, etc. */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&oacute;/g, 'ó')
+    .replace(/&aacute;/g, 'á')
+    .replace(/&eacute;/g, 'é')
+    .replace(/&iacute;/g, 'í')
+    .replace(/&uacute;/g, 'ú')
+    .replace(/&ntilde;/g, 'ñ');
+}
 
 // Extract emails from any text string
 function extractEmails(text: string): string[] {
@@ -47,10 +68,13 @@ type Job = {
   translations?: Record<string, { title: string; description: string }>;
 };
 
+const ADMIN_EMAIL_DETAIL = 'circusworldlife@gmail.com';
+
 export default function JobDetailScreen() {
   const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, artistProfile } = useAuthStore();
+  const isAdmin = user?.email === ADMIN_EMAIL_DETAIL;
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [flyerFullscreen, setFlyerFullscreen] = useState(false);
@@ -66,6 +90,9 @@ export default function JobDetailScreen() {
   const isDefaultLang = targetLanguage === 'Español';
   const [translating, setTranslating] = useState(false);
   const [translation, setTranslation] = useState<{ title: string; description: string } | null>(null);
+  const [uploadingFlyer, setUploadingFlyer] = useState(false);
+  const [localFlyerPreview, setLocalFlyerPreview] = useState<string | null>(null);
+  const [flyerUploadDone, setFlyerUploadDone] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -106,6 +133,38 @@ export default function JobDetailScreen() {
     supabase.from('artist_profiles').select('*').eq('user_id', user.id).maybeSingle()
       .then(({ data }) => setProfile(data));
   }, [user?.id, artistProfile]);
+
+  // Detect if job is email-sourced with a social link
+  const socialLink = job?.contact_url || job?.source_url || null;
+  const isEmailSourced = job?.source_name === 'email';
+
+  // Helpers for the social link display
+  const PLATFORM_NAMES = ['instagram', 'facebook', 'tiktok', 'youtube', 'twitter', 'whatsapp'];
+  const titleIsPlatformName = PLATFORM_NAMES.includes((job?.title ?? '').toLowerCase().trim());
+  const socialPlatform = !socialLink ? null
+    : socialLink.includes('instagram.com') ? { name: 'Instagram', emoji: '📷', color: '#E1306C' }
+    : socialLink.includes('facebook.com') || socialLink.includes('fb.com') ? { name: 'Facebook', emoji: '👥', color: '#1877F2' }
+    : socialLink.includes('wa.me') || socialLink.includes('whatsapp.com') ? { name: 'WhatsApp', emoji: '💬', color: '#25D366' }
+    : socialLink.includes('t.me') || socialLink.includes('telegram') ? { name: 'Telegram', emoji: '✈️', color: '#2AABEE' }
+    : socialLink.includes('tiktok.com') ? { name: 'TikTok', emoji: '🎵', color: '#010101' }
+    : socialLink.includes('youtube.com') || socialLink.includes('youtu.be') ? { name: 'YouTube', emoji: '▶️', color: '#FF0000' }
+    : null;
+
+  // Better display title for platform-name placeholders
+  const displayTitle = titleIsPlatformName && socialPlatform
+    ? `Publicación en ${socialPlatform.name}`
+    : (job?.title ?? '');
+
+  // Don't show flyer if it's a platform OG/CDN image (not real job art)
+  const PLATFORM_IMAGE_DOMAINS = [
+    'cdninstagram.com', 'instagram.com',
+    'fbcdn.net', 'facebook.com',
+    'ytimg.com', 'ggpht.com',
+    'pbs.twimg.com', 'abs.twimg.com',
+    'static.tiktokcdn.com', 'rsrc.php',
+  ];
+  const flyerIsUseful = !!job?.flyer_url &&
+    !PLATFORM_IMAGE_DOMAINS.some(d => job.flyer_url!.includes(d));
 
   // Check if already applied
   useEffect(() => {
@@ -316,7 +375,6 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
   const disciplines = (job.disciplines ?? []).map(d => DISCIPLINES.find(x => x.id === d)?.label ?? d);
 
   const isOwner = job && user && (job as any).user_id === user.id;
-  const isAdmin = user?.email === ADMIN_EMAIL;
   const canDelete = isOwner || isAdmin;
 
   const handleDelete = () => {
@@ -328,14 +386,46 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
         {
           text: t('common.delete'), style: 'destructive',
           onPress: async () => {
-            const { error } = await supabase.from('scraped_jobs').delete().eq('id', job!.id);
-            if (error) Alert.alert(t('common.error'), error.message);
-            else router.replace('/(tabs)');
+            const { data: { session } } = await supabase.auth.getSession();
+            const r = await fetch('/api/admin-job', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+              body: JSON.stringify({ action: 'delete', jobId: job!.id }),
+            });
+            if (!r.ok) Alert.alert(t('common.error'), 'No se pudo eliminar');
+            else { markJobDeleted(job!.id); router.replace('/(tabs)'); }
           },
         },
       ]
     );
   };
+
+  function pickAndUploadFlyer() {
+    if (Platform.OS !== 'web') return;
+    if (!user) { router.push('/(auth)/welcome'); return; }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    (input as any).onchange = async (e: any) => {
+      const file = e.target?.files?.[0];
+      if (!file || !job) return;
+      const localUrl = URL.createObjectURL(file);
+      setLocalFlyerPreview(localUrl);
+      setUploadingFlyer(true);
+      setFlyerUploadDone(false);
+      const path = `community/${job.id}-${Date.now()}.${file.name.split('.').pop() || 'jpg'}`;
+      const { data, error } = await supabase.storage.from('job-flyers').upload(path, file, { upsert: true });
+      if (!error && data) {
+        const publicUrl = supabase.storage.from('job-flyers').getPublicUrl(path).data.publicUrl;
+        await supabase.from('scraped_jobs').update({ flyer_url: publicUrl }).eq('id', job.id);
+        setJob(prev => prev ? { ...prev, flyer_url: publicUrl } : prev);
+        setFlyerUploadDone(true);
+        setTimeout(() => setFlyerUploadDone(false), 3000);
+      }
+      setUploadingFlyer(false);
+    };
+    input.click();
+  }
 
   const handleShare = () => {
     if (!job) return;
@@ -385,18 +475,81 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-
-        {/* Flyer image with share overlay */}
-        {job.flyer_url ? (
-          <View style={styles.flyerWrapper}>
-            <TouchableOpacity onPress={() => setFlyerFullscreen(true)} activeOpacity={0.9}>
-              <Image source={{ uri: job.flyer_url }} style={styles.flyerImage} resizeMode="cover" />
-              <View style={styles.flyerHint}>
-                <Text style={styles.flyerHintText}>{t('job.tapToZoom')}</Text>
-              </View>
+      {/* Admin: pending review actions */}
+      {isAdmin && (job as any)?.status === 'pending_review' && (
+        <View style={styles.adminBar}>
+          <Text style={styles.adminBarLabel}>⏳ Pendiente de revisión</Text>
+          <View style={styles.adminBarActions}>
+            <TouchableOpacity
+              style={styles.adminApproveBtn}
+              onPress={async () => {
+                const { data: { session } } = await supabase.auth.getSession();
+                await fetch('/api/admin-job', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+                  body: JSON.stringify({ action: 'approve', jobId: job!.id }),
+                });
+                router.back();
+              }}
+            >
+              <Text style={styles.adminApproveBtnText}>✓ Publicar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.adminRejectBtn}
+              onPress={async () => {
+                const { data: { session } } = await supabase.auth.getSession();
+                const r2 = await fetch('/api/admin-job', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+                  body: JSON.stringify({ action: 'delete', jobId: job!.id }),
+                });
+                if (r2.ok) markJobDeleted(job!.id);
+                router.back();
+              }}
+            >
+              <Text style={styles.adminRejectBtnText}>✕ Eliminar</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
+        {/* Flyer image — only when it's real job art, not a platform logo */}
+        {flyerIsUseful || localFlyerPreview ? (
+          <View style={styles.flyerWrapper}>
+            <TouchableOpacity onPress={() => flyerIsUseful && setFlyerFullscreen(true)} activeOpacity={flyerIsUseful ? 0.9 : 1}>
+              <Image source={{ uri: localFlyerPreview || job.flyer_url! }} style={styles.flyerImage} resizeMode="cover" />
+              {flyerIsUseful && <View style={styles.flyerHint}><Text style={styles.flyerHintText}>{t('job.tapToZoom')}</Text></View>}
+              {uploadingFlyer && (
+                <View style={styles.flyerUploadOverlay}>
+                  <ActivityIndicator color="#fff" size="large" />
+                  <Text style={styles.flyerUploadOverlayText}>Subiendo imagen...</Text>
+                </View>
+              )}
+              {flyerUploadDone && (
+                <View style={[styles.flyerUploadOverlay, { backgroundColor: 'rgba(22,101,52,0.82)' }]}>
+                  <Text style={{ fontSize: 28, color: '#fff' }}>✓</Text>
+                  <Text style={styles.flyerUploadOverlayText}>¡Imagen guardada!</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {Platform.OS === 'web' && (
+              <TouchableOpacity style={styles.flyerChangeBtn} onPress={pickAndUploadFlyer} activeOpacity={0.7}>
+                <Text style={styles.flyerChangeBtnText}>🖼 Cambiar imagen</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : Platform.OS === 'web' ? (
+          /* No image — invite anyone to add one */
+          <TouchableOpacity style={styles.addFlyerCard} onPress={pickAndUploadFlyer} activeOpacity={0.8}>
+            <Text style={styles.addFlyerEmoji}>📸</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.addFlyerTitle}>¿Tenés una imagen de esta convocatoria?</Text>
+              <Text style={styles.addFlyerSub}>Subí el flyer o screenshot para ayudar a otros artistas.</Text>
+            </View>
+            <Text style={styles.addFlyerArrow}>+</Text>
+          </TouchableOpacity>
         ) : null}
 
         {/* Venue type tag */}
@@ -407,7 +560,25 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
           {job.source_name === 'flyer' && <Text style={styles.communityBadge}>{t('job.flyerBadge')}</Text>}
         </View>
 
-        <Text style={styles.title}>{translation?.title ?? job.title}</Text>
+        <Text style={styles.title}>{decodeHtmlEntities(translation?.title ?? displayTitle)}</Text>
+
+        {/* Prominent social link card — shown when job comes from a social post/group */}
+        {isEmailSourced && socialLink && socialPlatform && (
+          <TouchableOpacity
+            style={[styles.socialLinkCard, { borderColor: socialPlatform.color + '50' }]}
+            onPress={() => openExternalUrl(socialLink)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.socialLinkIcon, { backgroundColor: socialPlatform.color + '18' }]}>
+              <Text style={styles.socialLinkEmoji}>{socialPlatform.emoji}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.socialLinkLabel}>Ver publicación original</Text>
+              <Text style={styles.socialLinkPlatform} numberOfLines={1}>{socialPlatform.name} · {socialLink.replace(/^https?:\/\/(www\.)?/, '').slice(0, 45)}</Text>
+            </View>
+            <Text style={styles.socialLinkArrow}>↗</Text>
+          </TouchableOpacity>
+        )}
 
         {job.venue_name ? (
           <View style={styles.venueRow}>
@@ -502,7 +673,7 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
         {(translation?.description || job.description) && (
           <>
             <Text style={styles.sectionTitle}>{t('job.description')}</Text>
-            <Text style={styles.body}>{translation?.description || job.description}</Text>
+            <Text style={styles.body}>{decodeHtmlEntities(translation?.description || job.description || '')}</Text>
           </>
         )}
 
@@ -517,7 +688,7 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
                 </TouchableOpacity>
               )}
               {job.contact_url && (
-                <TouchableOpacity onPress={() => Linking.openURL(job.contact_url!)}>
+                <TouchableOpacity onPress={() => openExternalUrl(job.contact_url!)}>
                   <Text style={styles.contactLink}>{t('job.fullListing')}</Text>
                 </TouchableOpacity>
               )}
@@ -527,48 +698,79 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
 
         {/* Source link at bottom — only if different from contact_url */}
         {job.source_url && job.source_url !== job.contact_url && (
-          <TouchableOpacity style={styles.sourceLinkBtn} onPress={() => Linking.openURL(job.source_url!)} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.sourceLinkBtn} onPress={() => openExternalUrl(job.source_url!)} activeOpacity={0.7}>
             <Text style={styles.sourceLinkText}>🔗 {t('job.viewSource')}</Text>
           </TouchableOpacity>
         )}
 
-        {/* Buscar más info sobre la empresa */}
-        {job.venue_name && (
-          <View style={styles.companySearchCard}>
-            <Text style={styles.companySearchTitle}>🔎 Buscar más sobre la empresa</Text>
-            <Text style={styles.companySearchHint}>Encontrá contactos, redes sociales y más info</Text>
-            <View style={styles.companySearchRow}>
-              <TouchableOpacity
-                style={styles.companySearchBtn}
-                activeOpacity={0.75}
-                onPress={() => Linking.openURL(`https://www.google.com/search?q=${encodeURIComponent(job.venue_name! + ' ' + (job.location_country ?? '') + ' circus audition')}`)}>
-                <Text style={styles.companySearchEmoji}>🔍</Text>
-                <Text style={styles.companySearchLabel}>Google</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.companySearchBtn}
-                activeOpacity={0.75}
-                onPress={() => Linking.openURL(`https://www.google.com/search?q=site:instagram.com+${encodeURIComponent(job.venue_name!)}`)}>
-                <Text style={styles.companySearchEmoji}>📷</Text>
-                <Text style={styles.companySearchLabel}>Instagram</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.companySearchBtn}
-                activeOpacity={0.75}
-                onPress={() => Linking.openURL(`https://www.facebook.com/search/pages/?q=${encodeURIComponent(job.venue_name!)}`)}>
-                <Text style={styles.companySearchEmoji}>👥</Text>
-                <Text style={styles.companySearchLabel}>Facebook</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.companySearchBtn}
-                activeOpacity={0.75}
-                onPress={() => Linking.openURL(`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(job.venue_name!)}`)}>
-                <Text style={styles.companySearchEmoji}>💼</Text>
-                <Text style={styles.companySearchLabel}>LinkedIn</Text>
-              </TouchableOpacity>
+        {/* Bloque de info extra — IA o búsqueda manual */}
+        {job.venue_name && (() => {
+          const ins = (job as any).ai_insights;
+          if (ins && (ins.website || ins.casting_url || ins.instagram || ins.description || ins.contact_email)) {
+            return (
+              <View style={styles.companySearchCard}>
+                <Text style={styles.companySearchTitle}>Sobre la empresa</Text>
+                {ins.description ? (
+                  <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 10, lineHeight: 18 }}>{ins.description}</Text>
+                ) : null}
+                {ins.contact_email ? (
+                  <TouchableOpacity onPress={() => Linking.openURL(`mailto:${ins.contact_email}`)} activeOpacity={0.7} style={styles.insightRow}>
+                    <Text style={styles.insightIcon}>✉️</Text>
+                    <Text style={styles.insightLink}>{ins.contact_email}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {(ins.casting_url || ins.website) ? (
+                  <TouchableOpacity onPress={() => openExternalUrl(ins.casting_url || ins.website)} activeOpacity={0.7} style={styles.insightRow}>
+                    <Text style={styles.insightIcon}>🌐</Text>
+                    <Text style={styles.insightLink}>{ins.casting_url ? 'Página de casting' : 'Sitio oficial'}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {ins.instagram ? (
+                  <TouchableOpacity onPress={() => openExternalUrl(`https://instagram.com/${ins.instagram.replace('@', '')}`)} activeOpacity={0.7} style={styles.insightRow}>
+                    <Text style={styles.insightIcon}>📷</Text>
+                    <Text style={styles.insightLink}>@{ins.instagram.replace('@', '')}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {ins.search_snippets?.slice(0, 2).map((s: any, i: number) => (
+                  <TouchableOpacity key={i} onPress={() => openExternalUrl(s.url)} activeOpacity={0.7} style={styles.snippetRow}>
+                    <Text style={styles.snippetTitle} numberOfLines={1}>{s.title}</Text>
+                    <Text style={styles.snippetText} numberOfLines={2}>{s.snippet}</Text>
+                  </TouchableOpacity>
+                ))}
+                <Text style={styles.insightMeta}>Encontrado automáticamente · puede no estar actualizado</Text>
+              </View>
+            );
+          }
+          // Fallback: botones de búsqueda manual
+          return (
+            <View style={styles.companySearchCard}>
+              <Text style={styles.companySearchTitle}>🔎 Buscar más sobre la empresa</Text>
+              <Text style={styles.companySearchHint}>Encontrá contactos, redes sociales y más info</Text>
+              <View style={styles.companySearchRow}>
+                <TouchableOpacity style={styles.companySearchBtn} activeOpacity={0.75}
+                  onPress={() => openExternalUrl(`https://www.google.com/search?q=${encodeURIComponent(job.venue_name! + ' ' + (job.location_country ?? '') + ' circus audition')}`)}>
+                  <Text style={styles.companySearchEmoji}>🔍</Text>
+                  <Text style={styles.companySearchLabel}>Google</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.companySearchBtn} activeOpacity={0.75}
+                  onPress={() => openExternalUrl(`https://www.google.com/search?q=site:instagram.com+${encodeURIComponent(job.venue_name!)}`)}>
+                  <Text style={styles.companySearchEmoji}>📷</Text>
+                  <Text style={styles.companySearchLabel}>Instagram</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.companySearchBtn} activeOpacity={0.75}
+                  onPress={() => openExternalUrl(`https://www.facebook.com/search/pages/?q=${encodeURIComponent(job.venue_name!)}`)}>
+                  <Text style={styles.companySearchEmoji}>👥</Text>
+                  <Text style={styles.companySearchLabel}>Facebook</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.companySearchBtn} activeOpacity={0.75}
+                  onPress={() => openExternalUrl(`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(job.venue_name!)}`)}>
+                  <Text style={styles.companySearchEmoji}>💼</Text>
+                  <Text style={styles.companySearchLabel}>LinkedIn</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        )}
+          );
+        })()}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -697,7 +899,7 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
             {job.contact_url && (
               <>
                 <Text style={styles.modalSection}>🔗 Postulación online</Text>
-                <TouchableOpacity style={styles.applyEmailBtn} onPress={() => Linking.openURL(job.contact_url!)}>
+                <TouchableOpacity style={styles.applyEmailBtn} onPress={() => openExternalUrl(job.contact_url!)}>
                   <Text style={styles.applyEmailText}>Ir a la convocatoria original</Text>
                   <Text style={styles.applyEmailSub}>{job.contact_url}</Text>
                 </TouchableOpacity>
@@ -708,7 +910,7 @@ Redactá un email de postulación breve y profesional (2-3 párrafos). Adaptá e
             {!contactEmails.length && !job.contact_url && job.source_url && (
               <>
                 <Text style={styles.modalSection}>🌐 Publicación original</Text>
-                <TouchableOpacity style={styles.applyEmailBtn} onPress={() => Linking.openURL(job.source_url!)}>
+                <TouchableOpacity style={styles.applyEmailBtn} onPress={() => openExternalUrl(job.source_url!)}>
                   <Text style={styles.applyEmailText}>Ir al sitio de la fuente</Text>
                   <Text style={styles.applyEmailSub} numberOfLines={1}>{job.source_url}</Text>
                 </TouchableOpacity>
@@ -762,11 +964,47 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: SPACING.xl, paddingTop: SPACING.md, paddingBottom: 180 },
   flyerWrapper: { position: 'relative', marginBottom: 0 },
   flyerImage: {
-    width: '100%', height: 280, borderRadius: RADIUS.xl,
+    width: '100%', height: 200, borderRadius: RADIUS.xl,
     marginBottom: 4, backgroundColor: COLORS.borderLight,
   },
+  socialLinkCard: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    marginTop: SPACING.sm, marginBottom: SPACING.xs,
+    backgroundColor: COLORS.white, borderRadius: RADIUS.lg,
+    padding: SPACING.base, borderWidth: 1.5,
+  },
+  socialLinkIcon: {
+    width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+  },
+  socialLinkEmoji: { fontSize: 20 },
+  socialLinkLabel: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text, marginBottom: 2 },
+  socialLinkPlatform: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
+  socialLinkArrow: { fontSize: 18, color: COLORS.textMuted, fontWeight: '700' },
   flyerHint: { alignItems: 'center', marginBottom: SPACING.base },
   flyerHintText: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
+  flyerUploadOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.xl,
+    alignItems: 'center', justifyContent: 'center', gap: SPACING.sm,
+  },
+  flyerUploadOverlayText: { color: '#fff', fontWeight: '700', fontSize: FONTS.sizes.sm },
+  flyerChangeBtn: {
+    alignSelf: 'center', marginTop: 4, marginBottom: SPACING.sm,
+    paddingVertical: 5, paddingHorizontal: 14,
+    backgroundColor: COLORS.white, borderRadius: RADIUS.full,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  flyerChangeBtnText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, fontWeight: '600' },
+  addFlyerCard: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    marginBottom: SPACING.base, padding: SPACING.base,
+    backgroundColor: '#F0EDFF', borderRadius: RADIUS.lg,
+    borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#A78BFA',
+  },
+  addFlyerEmoji: { fontSize: 28 },
+  addFlyerTitle: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: '#5B21B6', marginBottom: 2 },
+  addFlyerSub: { fontSize: FONTS.sizes.xs, color: '#7C3AED', lineHeight: 16 },
+  addFlyerArrow: { fontSize: 22, fontWeight: '700', color: '#7C3AED' },
   flyerShareBtn: {
     position: 'absolute', bottom: 28, right: SPACING.md,
     width: 40, height: 40, borderRadius: 20,
@@ -898,4 +1136,37 @@ const styles = StyleSheet.create({
     paddingVertical: 4, paddingHorizontal: SPACING.sm, marginBottom: SPACING.base,
   },
   translatedBadgeText: { fontSize: FONTS.sizes.xs, color: COLORS.primary, fontWeight: '600' },
+  insightRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
+  insightIcon: { fontSize: 16, width: 22, textAlign: 'center' },
+  insightLink: { fontSize: FONTS.sizes.sm, color: COLORS.primary, fontWeight: '600', flex: 1 },
+  snippetRow: {
+    paddingVertical: SPACING.xs, borderTopWidth: 1, borderTopColor: COLORS.borderLight,
+    marginTop: SPACING.xs,
+  },
+  snippetTitle: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text, marginBottom: 2 },
+  snippetText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, lineHeight: 16 },
+  insightMeta: {
+    fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: SPACING.sm,
+    fontStyle: 'italic',
+  },
+  adminBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#FFF7ED', borderBottomWidth: 1, borderBottomColor: '#FED7AA',
+    paddingHorizontal: SPACING.xl, paddingVertical: SPACING.sm,
+  },
+  adminBarLabel: { fontSize: FONTS.sizes.sm, color: '#92400E', fontWeight: '600' },
+  adminBarActions: { flexDirection: 'row', gap: SPACING.sm },
+  adminApproveBtn: {
+    backgroundColor: '#10B981', borderRadius: RADIUS.md,
+    paddingVertical: 6, paddingHorizontal: SPACING.md,
+  },
+  adminApproveBtnText: { color: '#fff', fontWeight: '700', fontSize: FONTS.sizes.sm },
+  adminRejectBtn: {
+    backgroundColor: '#EF4444', borderRadius: RADIUS.md,
+    paddingVertical: 6, paddingHorizontal: SPACING.md,
+  },
+  adminRejectBtnText: { color: '#fff', fontWeight: '700', fontSize: FONTS.sizes.sm },
 });

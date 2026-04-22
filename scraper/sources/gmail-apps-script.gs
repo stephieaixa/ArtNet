@@ -64,11 +64,24 @@ const SKIP_SENDERS = [
   '@accounts.google.com', '@google.com', '@googlemail.com',
   '@facebookmail.com', '@instagram.com', '@notifications.',
   'bounce', 'automated', 'donotreply',
+  // ArtNet's own emails — never process these
+  'artnetcircus@gmail.com', 'circusworldlife@gmail.com',
+  '@supabase.io', '@supabase.co', 'supabase',
 ];
 
-function isSystemEmail(from) {
+// Subject patterns that are clearly system/notification emails
+const SKIP_SUBJECTS = [
+  'confirm', 'verificá', 'verifica', 'sign up', 'registro', 'bienvenido',
+  'welcome', 'password', 'contraseña', 'reset', 'audición está en revisión',
+  'tu audicion', 'subscription', 'suscripción', 'invoice', 'factura',
+];
+
+function isSystemEmail(from, subject) {
   const f = from.toLowerCase();
-  return SKIP_SENDERS.some(pattern => f.includes(pattern));
+  const s = (subject || '').toLowerCase();
+  if (SKIP_SENDERS.some(pattern => f.includes(pattern))) return true;
+  if (SKIP_SUBJECTS.some(pattern => s.includes(pattern))) return true;
+  return false;
 }
 
 function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
@@ -86,10 +99,60 @@ function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
   console.log(`Procesando: "${subject}" de ${from}`);
 
   // Ignorar emails automáticos/de sistema sin notificar a nadie
-  if (isSystemEmail(from)) {
+  if (isSystemEmail(from, subject)) {
     console.log('Email de sistema → ignorando silenciosamente');
     thread.addLabel(GmailApp.getUserLabelByName(LABEL_PROCESSED));
     thread.moveToArchive();
+    return;
+  }
+
+  // ── Detectar imagen adjunta (screenshot, flyer) ───────────────────────────
+  const attachments = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
+  const imageAttachment = attachments.find(function(a) {
+    return a.getContentType().startsWith('image/');
+  });
+
+  if (imageAttachment) {
+    console.log('Imagen adjunta detectada → analizando con visión IA');
+    const mimeType = imageAttachment.getContentType();
+    const imageBytes = imageAttachment.getBytes();
+    const imageBase64 = Utilities.base64Encode(imageBytes);
+
+    // Subir imagen a Supabase Storage para que sea visible en la app
+    const flyerUrl = uploadImageToSupabase(imageBytes, mimeType, sourceId, supabaseUrl, supabaseKey);
+    console.log('Flyer subido:', flyerUrl);
+
+    // Analizar imagen con IA vision
+    const visionResult = analyzeImageWithVision(imageBase64, mimeType, groqKey);
+    console.log(`Vision IA: circus=${visionResult.isCircus}, confidence=${visionResult.confidence}`);
+
+    if (!visionResult.isCircus && visionResult.confidence === 'high') {
+      console.log('No es circo (alta confianza) → archivando');
+      notifyBoth('not_circus', subject, null, extractEmail(from), null);
+      thread.addLabel(GmailApp.getUserLabelByName(LABEL_PROCESSED));
+      thread.moveToArchive();
+      return;
+    }
+
+    const status = (visionResult.isCircus && visionResult.confidence === 'high') ? 'published' : 'pending_review';
+    const title  = visionResult.extracted?.title || subject.replace(/^(Re:|Fwd:|FW:)\s*/i, '').trim() || 'Audición (imagen)';
+    console.log(`Status: ${status} — "${title}"`);
+
+    // Guardar link directo al email para que el admin pueda verlo en Gmail
+    const gmailUrl = 'https://mail.google.com/mail/u/0/#all/' + msg.getId();
+
+    const saved = saveToSupabase({
+      sourceId, subject: title, from,
+      body: visionResult.extracted?.description || body.trim() || 'Ver imagen adjunta',
+      sourceUrl: gmailUrl,
+      flyerUrl: flyerUrl,
+      status, supabaseUrl, supabaseKey,
+      extracted: visionResult.extracted,
+    });
+    if (saved.ok) {
+      notifyBoth(status, title, saved.id, extractEmail(from), null);
+      labelAndArchive(thread, status);
+    }
     return;
   }
 
@@ -119,26 +182,30 @@ function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
     }
 
     // Link público → analizar con Groq
-    const textToAnalyze = `Asunto: ${subject}\nDe: ${from}\n\nTítulo: ${social.title}\nDescripción: ${social.description}\n\nLink: ${socialUrl}`;
+    const textToAnalyze = `Asunto: ${subject}\nDe: ${from}\n\nTítulo: ${social.title}\nDescripción: ${social.description}\n\nLink: ${socialUrl}\n\nCuerpo del email:\n${body}`;
     const aiResult = validateWithGroq(textToAnalyze, groqKey);
     console.log(`Resultado IA (social): circus=${aiResult.isCircus}, confidence=${aiResult.confidence}`);
 
-    if (!aiResult.isCircus && aiResult.confidence !== 'low') {
-      console.log('No es circo → archivando y notificando');
+    if (!aiResult.isCircus && aiResult.confidence === 'high') {
+      console.log('No es circo (alta confianza) → archivando y notificando');
       notifyBoth('not_circus', subject, null, extractEmail(from), null);
       thread.addLabel(GmailApp.getUserLabelByName(LABEL_PROCESSED));
       thread.moveToArchive();
       return;
     }
 
+    // Alta confianza de que es circo → publicar directo
+    // Media o baja confianza → pending_review para revisión manual
     const status = (aiResult.isCircus && aiResult.confidence === 'high') ? 'published' : 'pending_review';
-    const title  = social.title || subject.replace(/^(Re:|Fwd:|FW:)\s*/i, '').trim() || 'Audición sin título';
+    const title  = aiResult.extracted?.title || social.title || subject.replace(/^(Re:|Fwd:|FW:)\s*/i, '').trim() || 'Audición sin título';
+    console.log(`Status asignado: ${status}`);
     const saved  = saveToSupabase({
       sourceId, subject: title, from,
       body: social.description || body.trim(),
       sourceUrl: socialUrl,
       flyerUrl: social.image || null,
       status, supabaseUrl, supabaseKey,
+      extracted: aiResult.extracted,
     });
     if (saved.ok) {
       notifyBoth(status, title, saved.id, extractEmail(from), null);
@@ -152,19 +219,22 @@ function processThread(thread, groqKey, supabaseUrl, supabaseKey) {
   const result   = validateWithGroq(fullText, groqKey);
   console.log(`Resultado IA: circus=${result.isCircus}, confidence=${result.confidence}`);
 
-  if (!result.isCircus && result.confidence !== 'low') {
-    console.log('No es circo → archivando y notificando');
+  if (!result.isCircus && result.confidence === 'high') {
+    console.log('No es circo (alta confianza) → archivando y notificando');
     notifyBoth('not_circus', subject, null, extractEmail(from), null);
     thread.addLabel(GmailApp.getUserLabelByName(LABEL_PROCESSED));
     thread.moveToArchive();
     return;
   }
 
+  // Alta confianza de que es circo → publicar directo; si no → pending_review
   const status = (result.isCircus && result.confidence === 'high') ? 'published' : 'pending_review';
+  console.log(`Status asignado: ${status}`);
   const saved  = saveToSupabase({
     sourceId, subject, from, body,
     sourceUrl: null, flyerUrl: null,
     status, supabaseUrl, supabaseKey,
+    extracted: result.extracted,
   });
   if (saved.ok) {
     notifyBoth(status, subject, saved.id, extractEmail(from), null);
@@ -213,8 +283,19 @@ function fetchSocialContent(url) {
 
     const html = res.getContentText().slice(0, 50000);
 
-    // Instagram a veces retorna 200 pero muestra login wall
-    if (html.includes('"loginPage"') || html.includes('Log in to Instagram')) {
+    const htmlLower = html.toLowerCase();
+
+    // Detectar login walls en cualquier idioma
+    const LOGIN_WALL_PATTERNS = [
+      '"loginpage"', 'log in to instagram', 'log in to facebook',
+      'inicia sesión en instagram', 'inicia sesi', // "inicia sesión" in Spanish
+      'crea una cuenta o inicia', // "Crea una cuenta o inicia sesión"
+      'create an account or log in', 'you must log in',
+      'sign up to see photos', 'sign up for instagram',
+      'connect with friends and the world', // Facebook login
+      'log into facebook', 'facebook – log in',
+    ];
+    if (LOGIN_WALL_PATTERNS.some(p => htmlLower.includes(p))) {
       console.log('Login wall detectado → privado');
       return null;
     }
@@ -223,7 +304,14 @@ function fetchSocialContent(url) {
     const description = ogTag(html, 'og:description') || metaTag(html, 'description') || '';
     const image       = ogTag(html, 'og:image')       || '';
 
-    if (!title && !description) return null; // no se pudo extraer nada útil
+    if (!title && !description) return null;
+
+    // Si el título es solo el nombre de la plataforma → no hay info real
+    const GENERIC_TITLES = ['instagram', 'facebook', 'tiktok', 'youtube', 'twitter', 'x', 'whatsapp'];
+    if (GENERIC_TITLES.includes(title.trim().toLowerCase())) {
+      console.log('Título genérico de plataforma → tratar como privado');
+      return null;
+    }
 
     console.log(`Contenido público: "${title.slice(0, 60)}"`);
     return { title: title.slice(0, 200), description: description.slice(0, 1000), image };
@@ -257,20 +345,31 @@ function validateWithGroq(text, apiKey) {
     const payload = {
       model: 'llama-3.3-70b-versatile',
       temperature: 0.1,
-      max_tokens: 150,
+      max_tokens: 600,
       messages: [{
         role: 'user',
         content:
-`Sos un filtro para una plataforma de trabajos de circo y artes acrobáticas.
-Analizá el texto y determiná:
-1. ¿Es una oferta/audición/casting para artistas de CIRCO, acrobacia, varieté, clown, aéreos, malabares?
-2. Nivel de confianza.
-SÍ: acróbatas, aéreos, clowns, malabaristas, cruceros buscando entertainers, dinner shows.
-NO: danza, ballet, teatro dramático, música, yoga, fitness.
-Respondé SOLO con JSON: {"is_circus": true/false, "confidence": "high"/"medium"/"low", "reason": "breve"}
+`Sos un extractor de datos para una plataforma de trabajos de circo y artes acrobáticas.
+
+Analizá el texto y respondé SOLO con JSON con esta estructura:
+{
+  "is_circus": true/false,
+  "confidence": "high"/"medium"/"low",
+  "title": "título del trabajo o null",
+  "description": "descripción limpia del trabajo (máx 400 chars) o null",
+  "venue_name": "nombre de la empresa/circo/crucero o null",
+  "city": "ciudad o null",
+  "country": "país o null",
+  "disciplines": ["lista de disciplinas relevantes: aerial, trapeze, acrobatics, juggling, clown, contortion, hand_to_hand, etc."],
+  "pay_info": "info de pago si se menciona o null",
+  "contact_email": "email de contacto si se menciona o null"
+}
+
+SÍ es circo: acróbatas, aéreos, clowns, malabaristas, cruceros buscando entertainers, dinner shows, trapecio, telas, aro.
+NO es circo: danza clásica, ballet, teatro dramático, música, yoga, fitness.
 
 TEXTO:
-${text.slice(0, 2000)}`
+${text.slice(0, 2500)}`
       }],
     };
 
@@ -284,36 +383,152 @@ ${text.slice(0, 2000)}`
 
     if (res.getResponseCode() !== 200) {
       console.error('Groq HTTP error:', res.getResponseCode());
-      return { isCircus: true, confidence: 'low' };
+      return { isCircus: true, confidence: 'low', extracted: null };
     }
 
     const data   = JSON.parse(res.getContentText());
     const raw    = data.choices?.[0]?.message?.content ?? '';
     const match  = raw.match(/\{[\s\S]*\}/);
-    if (!match) return { isCircus: true, confidence: 'low' };
+    if (!match) return { isCircus: true, confidence: 'low', extracted: null };
     const parsed = JSON.parse(match[0]);
-    return { isCircus: !!parsed.is_circus, confidence: parsed.confidence ?? 'low' };
+    return {
+      isCircus:   !!parsed.is_circus,
+      confidence: parsed.confidence ?? 'low',
+      extracted:  parsed,
+    };
   } catch (e) {
     console.error('Error Groq:', e.message);
-    return { isCircus: true, confidence: 'low' };
+    return { isCircus: true, confidence: 'low', extracted: null };
+  }
+}
+
+// ─── Groq Vision — analizar imagen ───────────────────────────────────────────
+
+/**
+ * Envía una imagen base64 a Groq Vision y extrae datos de la convocatoria.
+ * Retorna el mismo shape que validateWithGroq: { isCircus, confidence, extracted }
+ */
+function analyzeImageWithVision(imageBase64, mimeType, groqKey) {
+  try {
+    const prompt =
+`Analizá esta imagen. Es un screenshot o flyer de una convocatoria/audición.
+
+Extraé los datos y respondé SOLO con JSON con esta estructura:
+{
+  "is_circus": true/false,
+  "confidence": "high"/"medium"/"low",
+  "title": "título de la convocatoria o null",
+  "description": "descripción completa del trabajo (máx 400 chars) o null",
+  "venue_name": "nombre del circo/empresa/crucero o null",
+  "city": "ciudad o null",
+  "country": "país o null",
+  "disciplines": ["lista: aerial, trapeze, acrobatics, juggling, clown, contortion, hand_to_hand, etc."],
+  "pay_info": "info de pago si se menciona o null",
+  "contact_email": "email de contacto si aparece o null"
+}
+
+SÍ es circo: acróbatas, aéreos, clowns, malabaristas, cruceros buscando entertainers, dinner shows, trapecio, telas, aro aéreo.
+NO es circo: danza clásica, ballet, teatro dramático, música, yoga, fitness.
+Si la imagen no contiene texto de convocatoria, respondé con is_circus: false, confidence: "high".`;
+
+    const res = UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'Authorization': `Bearer ${groqKey}` },
+      payload: JSON.stringify({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        max_tokens: 600,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+            { type: 'text', text: prompt },
+          ],
+        }],
+      }),
+      muteHttpExceptions: true,
+    });
+
+    if (res.getResponseCode() !== 200) {
+      console.error('Groq Vision HTTP error:', res.getResponseCode(), res.getContentText().slice(0, 200));
+      return { isCircus: true, confidence: 'low', extracted: null };
+    }
+
+    const data  = JSON.parse(res.getContentText());
+    const raw   = data.choices?.[0]?.message?.content ?? '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return { isCircus: true, confidence: 'low', extracted: null };
+    const parsed = JSON.parse(match[0]);
+    return {
+      isCircus:   !!parsed.is_circus,
+      confidence: parsed.confidence ?? 'low',
+      extracted:  parsed,
+    };
+  } catch (e) {
+    console.error('Error Groq Vision:', e.message);
+    return { isCircus: true, confidence: 'low', extracted: null };
+  }
+}
+
+// ─── Subir imagen con smart crop via Vercel API ───────────────────────────────
+
+/**
+ * Llama al endpoint /api/smart-crop de ArtNet:
+ * - Groq Vision detecta el área del flyer (descarta UI de redes sociales)
+ * - sharp recorta y reencoda la imagen
+ * - Sube a Supabase Storage
+ * - Retorna la URL pública, o null si falla
+ */
+function uploadImageToSupabase(imageBytes, mimeType, sourceId, supabaseUrl, supabaseKey) {
+  const smartCropUrl = 'https://artnet-circus.vercel.app/api/smart-crop';
+  try {
+    const imageBase64 = Utilities.base64Encode(imageBytes);
+    const res = UrlFetchApp.fetch(smartCropUrl, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ imageBase64, mimeType, sourceId, supabaseUrl, supabaseKey }),
+      muteHttpExceptions: true,
+    });
+    const code = res.getResponseCode();
+    if (code !== 200) {
+      console.error('smart-crop error:', code, res.getContentText().slice(0, 300));
+      return null;
+    }
+    const data = JSON.parse(res.getContentText());
+    if (data.url) {
+      console.log('Imagen con smart crop subida:', data.url);
+      return data.url;
+    }
+    console.error('smart-crop sin URL:', res.getContentText());
+    return null;
+  } catch (e) {
+    console.error('Error en uploadImageToSupabase:', e.message);
+    return null;
   }
 }
 
 // ─── Supabase ────────────────────────────────────────────────────────────────
 
-function saveToSupabase({ sourceId, subject, from, body, sourceUrl, flyerUrl, status, supabaseUrl, supabaseKey }) {
+function saveToSupabase({ sourceId, subject, from, body, sourceUrl, flyerUrl, status, supabaseUrl, supabaseKey, extracted }) {
   try {
+    const cleanTitle = (extracted?.title || subject).replace(/^(Re:|Fwd:|FW:)\s*/i, '').trim().slice(0, 120);
     const payload = {
-      source_id:     sourceId,
-      source_name:   'email',
-      source_url:    sourceUrl || '',
-      title:         subject.replace(/^(Re:|Fwd:|FW:)\s*/i, '').trim().slice(0, 120),
-      description:   body.trim(),
-      contact_email: extractEmail(from),
-      flyer_url:     flyerUrl || null,
+      source_id:        sourceId,
+      source_name:      'email',
+      source_url:       sourceUrl || '',
+      contact_url:      sourceUrl || '',   // link visible en el detalle del trabajo
+      title:            cleanTitle,
+      description:      extracted?.description || body.trim(),
+      venue_name:       extracted?.venue_name  || null,
+      location_city:    extracted?.city        || null,
+      location_country: extracted?.country     || null,
+      disciplines:      extracted?.disciplines || [],
+      pay_info:         extracted?.pay_info    || null,
+      contact_email:    extracted?.contact_email || null,
+      flyer_url:        flyerUrl || null,
       status,
-      is_scraped:    false,
-      scraped_at:    new Date().toISOString(),
+      is_scraped:       false,
+      scraped_at:       new Date().toISOString(),
     };
 
     const res = UrlFetchApp.fetch(`${supabaseUrl}/rest/v1/scraped_jobs`, {

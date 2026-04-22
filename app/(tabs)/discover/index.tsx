@@ -3,7 +3,9 @@ import { useFocusEffect } from 'expo-router';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   TextInput, FlatList, ActivityIndicator, Image, Alert,
+  Platform, Linking, Modal,
 } from 'react-native';
+import { openExternalUrl } from '../../../src/utils/openUrl';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from 'react-i18next';
@@ -13,11 +15,12 @@ import { useLanguageStore } from '../../../src/stores/languageStore';
 import { translateBatch } from '../../../src/services/translate';
 import { COLORS, FONTS, SPACING, RADIUS, HEADER_TOP } from '../../../src/constants/theme';
 import { VENUE_TYPES } from '../../../src/constants/venueTypes';
-import { DISCIPLINES } from '../../../src/constants/disciplines';
+import { DISCIPLINES, DISCIPLINE_GENRES, getDisciplinesByGenre } from '../../../src/constants/disciplines';
 import FilterModal, { FilterState } from '../../../src/components/shared/FilterModal';
 import SuggestSourceModal from '../../../src/components/shared/SuggestSourceModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchJobs, archiveExpiredJobs, type ScrapedJob } from '../../../src/services/jobs';
+import { popDeletedIds } from '../../../src/utils/feedRefresh';
 import { supabase } from '../../../src/services/supabase';
 import type { JobPost } from '../../../src/types';
 
@@ -128,7 +131,7 @@ function JobCard({ job, translatedTitle, translatedDesc, selecting = false, isSe
         )}
       </View>
 
-      <Text style={styles.jobTitle}>{translatedTitle ?? job.title}</Text>
+      <Text style={styles.jobTitle}>{decodeEntities(translatedTitle ?? job.title ?? '')}</Text>
 
       <View style={styles.venueRow}>
         <Text style={styles.venueName}>{job.venue?.name}</Text>
@@ -137,7 +140,7 @@ function JobCard({ job, translatedTitle, translatedDesc, selecting = false, isSe
         <Text style={styles.location}>{job.location_city}, {job.location_country}</Text>
       </View>
 
-      <Text style={styles.description} numberOfLines={2}>{translatedDesc ?? job.description}</Text>
+      <Text style={styles.description} numberOfLines={2}>{decodeEntities(translatedDesc ?? job.description ?? '')}</Text>
 
       <View style={styles.disciplineTags}>
         {job.disciplines_needed.slice(0, 3).map(d => {
@@ -154,7 +157,7 @@ function JobCard({ job, translatedTitle, translatedDesc, selecting = false, isSe
       </View>
 
       <View style={styles.cardFooter}>
-        <Text style={styles.pay}>{formatPay(job, t('discover.payNegotiable'))}<Text style={styles.payPer}> / {job.pay_type === 'monthly' ? t('discover.perMonth') : job.pay_type === 'per_show' ? t('discover.perShow') : job.pay_type}</Text></Text>
+        <Text style={styles.pay}>{formatPay(job, t('discover.payNegotiable'))}{job.pay_type !== 'negotiable' && job.pay_min && <Text style={styles.payPer}> / {job.pay_type === 'monthly' ? t('discover.perMonth') : job.pay_type === 'per_show' ? t('discover.perShow') : job.pay_type}</Text>}</Text>
         <View style={styles.footerRight}>
           <Text style={styles.apps}>{t('discover.applications_other', { count: job.application_count })}</Text>
           <Text style={styles.dot}> · </Text>
@@ -166,13 +169,46 @@ function JobCard({ job, translatedTitle, translatedDesc, selecting = false, isSe
   );
 }
 
+const PLATFORM_CARD_TITLES = ['instagram', 'facebook', 'tiktok', 'youtube', 'twitter', 'whatsapp', 'telegram'];
+const PLATFORM_IMAGE_CDN = [
+  'cdninstagram.com', 'instagram.com', 'fbcdn.net', 'facebook.com',
+  'ytimg.com', 'ggpht.com', 'pbs.twimg.com', 'static.tiktokcdn.com', 'rsrc.php',
+];
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+    .replace(/&oacute;/g, 'ó').replace(/&aacute;/g, 'á').replace(/&eacute;/g, 'é')
+    .replace(/&iacute;/g, 'í').replace(/&uacute;/g, 'ú').replace(/&ntilde;/g, 'ñ');
+}
+
 // Adapta un ScrapedJob (de Supabase) al formato JobPost que usa JobCard
 function adaptScrapedJob(j: ScrapedJob): JobPost {
+  const isPlatformTitle = PLATFORM_CARD_TITLES.includes((j.title ?? '').toLowerCase().trim());
+  const socialLink = j.contact_url || j.source_url || '';
+  const platformName = socialLink.includes('instagram') ? 'Instagram'
+    : socialLink.includes('facebook') || socialLink.includes('fb.com') ? 'Facebook'
+    : socialLink.includes('whatsapp') || socialLink.includes('wa.me') ? 'WhatsApp'
+    : socialLink.includes('tiktok') ? 'TikTok'
+    : socialLink.includes('youtube') || socialLink.includes('youtu.be') ? 'YouTube'
+    : socialLink.includes('telegram') || socialLink.includes('t.me') ? 'Telegram'
+    : null;
+
+  const displayTitle = isPlatformTitle && platformName
+    ? `Publicación en ${platformName}`
+    : decodeEntities(j.title ?? '');
+
+  const isFlyerUseful = !!j.flyer_url &&
+    !PLATFORM_IMAGE_CDN.some(d => j.flyer_url!.includes(d));
+
   return {
     id: j.id,
     venue_id: '',
-    title: j.title,
-    description: j.description ?? '',
+    title: displayTitle,
+    description: decodeEntities(j.description ?? ''),
     disciplines_needed: j.disciplines ?? [],
     venue_type: j.venue_type ?? 'other',
     contract_type: 'seasonal',
@@ -202,7 +238,7 @@ function adaptScrapedJob(j: ScrapedJob): JobPost {
     _contact_url: j.contact_url,
     _pay_info: j.pay_info,
     _is_scraped: j.is_scraped,
-    _flyer_url: j.flyer_url,
+    _flyer_url: isFlyerUseful ? j.flyer_url : null,
   } as any;
 }
 
@@ -224,17 +260,45 @@ export default function DiscoverScreen() {
   const [showSourcesBanner, setShowSourcesBanner] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
   const [pendingJobs, setPendingJobs] = useState<any[]>([]);
-  const [showPending, setShowPending] = useState(false);
+  const [showPending, setShowPending] = useState(() =>
+    Platform.OS === 'web' && typeof window !== 'undefined'
+      ? sessionStorage.getItem('artnet_pending_open') === '1'
+      : false
+  );
+  const [editingTitles, setEditingTitles] = useState<Record<string, string | null>>({});
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [savingTags, setSavingTags] = useState<Record<string, boolean>>({});
+  const [uploadingImage, setUploadingImage] = useState<Record<string, boolean>>({});
+  const [uploadSuccess, setUploadSuccess] = useState<Record<string, boolean>>({});
+  const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
+  const [openedLinks, setOpenedLinks] = useState<Record<string, boolean>>({});
+  const [fetchingPreview, setFetchingPreview] = useState<Record<string, boolean>>({});
+  const [linkPreviews, setLinkPreviews] = useState<Record<string, { image: string | null; title: string | null; is_login_wall: boolean } | null>>({});
   const [artists, setArtists] = useState<ArtistProfile[]>([]);
   const [artistsLoading, setArtistsLoading] = useState(false);
   const flatListRef = useRef<any>(null);
   const scrollOffsetRef = useRef(0);
 
+  // Persist pending panel open state so it survives tab switches on iOS Safari
+  function openPendingPanel() {
+    if (Platform.OS === 'web') sessionStorage.setItem('artnet_pending_open', '1');
+    setShowPending(true);
+  }
+  function closePendingPanel() {
+    if (Platform.OS === 'web') sessionStorage.removeItem('artnet_pending_open');
+    setShowPending(false);
+  }
+
   useFocusEffect(useCallback(() => {
+    // Remove any jobs deleted from the detail screen
+    const deleted = popDeletedIds();
+    if (deleted.size > 0) {
+      setLiveJobs(prev => prev.filter(j => !deleted.has(j.id)));
+      setPendingJobs(prev => prev.filter(j => !deleted.has(j.id)));
+    }
     // Restore scroll position when returning from a detail screen
     const offset = scrollOffsetRef.current;
     if (offset <= 0) return;
-    // Intentar en dos momentos: inmediato y luego de un render completo
     const t1 = setTimeout(() => flatListRef.current?.scrollToOffset?.({ offset, animated: false }), 100);
     const t2 = setTimeout(() => flatListRef.current?.scrollToOffset?.({ offset, animated: false }), 350);
     return () => { clearTimeout(t1); clearTimeout(t2); };
@@ -256,39 +320,122 @@ export default function DiscoverScreen() {
 
   async function deleteSelected() {
     const ids = [...selected];
-    Alert.alert('Eliminar publicaciones', `¿Eliminás las ${ids.length} publicaciones seleccionadas?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar', style: 'destructive', onPress: async () => {
-          setLiveJobs(prev => prev.filter(j => !ids.includes(j.id)));
-          setSelected(new Set());
-          setSelecting(false);
-          for (const id of ids) {
-            await supabase.from('scraped_jobs').delete().eq('id', id);
-          }
-        },
-      },
-    ]);
+    if (!ids.length) return;
+    const session = await supabase.auth.getSession();
+    const jwt = session.data.session?.access_token;
+    const results = await Promise.all(ids.map(id =>
+      fetch('/api/admin-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+        body: JSON.stringify({ action: 'delete', jobId: id }),
+      }).then(r => r.ok ? id : null)
+    ));
+    const deleted = new Set(results.filter(Boolean));
+    setLiveJobs(prev => prev.filter(j => !deleted.has(j.id)));
+    setSelected(new Set());
+    setSelecting(false);
   }
 
   // Cargar pending_review para admin + auto-archivar expirados
   useEffect(() => {
     if (!isAdmin) return;
-    supabase.from('scraped_jobs').select('id,title,venue_name,contact_email,location_city,location_country,description')
+    supabase.from('scraped_jobs')
+      .select('id,title,venue_name,contact_email,contact_url,source_url,source_name,location_city,location_country,description,pay_info,disciplines,ai_insights,flyer_url,scraped_at')
       .eq('status', 'pending_review').order('scraped_at', { ascending: false })
       .then(({ data }) => setPendingJobs(data ?? []));
-    // Limpiar silenciosamente los expirados al abrir la app
-    archiveExpiredJobs().catch(() => {});
+    // archiveExpiredJobs deshabilitado — se corre solo desde el cron de Vercel
   }, [isAdmin]);
 
+  async function adminAction(action: 'approve' | 'delete', id: string): Promise<boolean> {
+    try {
+      const session = await supabase.auth.getSession();
+      const jwt = session.data.session?.access_token;
+      const r = await fetch('/api/admin-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+        body: JSON.stringify({ action, jobId: id }),
+      });
+      if (!r.ok) {
+        const err = await r.text().catch(() => String(r.status));
+        Alert.alert('Error', `No se pudo ${action === 'delete' ? 'eliminar' : 'publicar'}: ${err}`);
+        return false;
+      }
+      return true;
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Error de red');
+      return false;
+    }
+  }
+
   async function approveJob(id: string) {
-    await supabase.from('scraped_jobs').update({ status: 'published' }).eq('id', id);
-    setPendingJobs(prev => prev.filter(j => j.id !== id));
+    const ok = await adminAction('approve', id);
+    if (ok) setPendingJobs(prev => prev.filter(j => j.id !== id));
   }
 
   async function rejectJob(id: string) {
-    await supabase.from('scraped_jobs').delete().eq('id', id);
-    setPendingJobs(prev => prev.filter(j => j.id !== id));
+    const ok = await adminAction('delete', id);
+    if (ok) setPendingJobs(prev => prev.filter(j => j.id !== id));
+  }
+
+  async function toggleGenreOnJob(job: any, genreId: string) {
+    const genreIds = getDisciplinesByGenre(genreId);
+    const current: string[] = job.disciplines || [];
+    const hasAny = genreIds.some((d: string) => current.includes(d));
+    const updated = hasAny
+      ? current.filter((d: string) => !genreIds.includes(d))
+      : [...new Set([...current, ...genreIds])];
+    setSavingTags(s => ({ ...s, [job.id]: true }));
+    await supabase.from('scraped_jobs').update({ disciplines: updated }).eq('id', job.id);
+    setSavingTags(s => ({ ...s, [job.id]: false }));
+    setPendingJobs(prev => prev.map(j => j.id === job.id ? { ...j, disciplines: updated } : j));
+  }
+
+  async function savePendingTitle(job: any, newTitle: string) {
+    const trimmed = newTitle.trim();
+    if (!trimmed || trimmed === job.title) {
+      setEditingTitles(s => ({ ...s, [job.id]: null }));
+      return;
+    }
+    await supabase.from('scraped_jobs').update({ title: trimmed }).eq('id', job.id);
+    setPendingJobs(prev => prev.map(j => j.id === job.id ? { ...j, title: trimmed } : j));
+    setEditingTitles(s => ({ ...s, [job.id]: null }));
+  }
+
+  async function uploadJobScreenshot(job: any, file: File) {
+    // Show local preview immediately so user sees the image right away
+    const localUrl = URL.createObjectURL(file);
+    setLocalPreviews(s => ({ ...s, [job.id]: localUrl }));
+    setUploadingImage(s => ({ ...s, [job.id]: true }));
+    setUploadSuccess(s => ({ ...s, [job.id]: false }));
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `pending/${job.id}-${Date.now()}.${ext}`;
+    const { data, error } = await supabase.storage.from('job-flyers').upload(path, file, { upsert: true });
+    if (!error && data) {
+      const { data: urlData } = supabase.storage.from('job-flyers').getPublicUrl(path);
+      const publicUrl = urlData.publicUrl;
+      await supabase.from('scraped_jobs').update({ flyer_url: publicUrl }).eq('id', job.id);
+      setPendingJobs(prev => prev.map(j => j.id === job.id ? { ...j, flyer_url: publicUrl } : j));
+      setUploadSuccess(s => ({ ...s, [job.id]: true }));
+      setTimeout(() => setUploadSuccess(s => ({ ...s, [job.id]: false })), 3000);
+    }
+    setUploadingImage(s => ({ ...s, [job.id]: false }));
+  }
+
+  async function fetchLinkPreview(job: any, link: string) {
+    setFetchingPreview(s => ({ ...s, [job.id]: true }));
+    try {
+      const res = await fetch(`/api/fetch-og?url=${encodeURIComponent(link)}`);
+      const data = await res.json();
+      setLinkPreviews(s => ({ ...s, [job.id]: { image: data.image ?? null, title: data.title ?? null, is_login_wall: !!data.is_login_wall } }));
+    } catch {
+      setLinkPreviews(s => ({ ...s, [job.id]: { image: null, title: null, is_login_wall: false } }));
+    }
+    setFetchingPreview(s => ({ ...s, [job.id]: false }));
+  }
+
+  async function useOgImageAsFlyer(job: any, imageUrl: string) {
+    await supabase.from('scraped_jobs').update({ flyer_url: imageUrl }).eq('id', job.id);
+    setPendingJobs(prev => prev.map(j => j.id === job.id ? { ...j, flyer_url: imageUrl } : j));
   }
 
   // Intentar cargar datos reales de Supabase
@@ -393,6 +540,277 @@ export default function DiscoverScreen() {
 
   const filtered = liveJobs;
 
+  // ── Pending review screen (replaces discover entirely) ──────────────────────
+  if (isAdmin && showPending) {
+    return (
+      <View style={styles.container}>
+        <StatusBar style="dark" />
+        <View style={styles.pendingModalHeader}>
+          <TouchableOpacity onPress={() => closePendingPanel()} style={styles.pendingBackBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={styles.pendingBackBtnText}>← Volver</Text>
+          </TouchableOpacity>
+          <Text style={styles.pendingModalTitle}>
+            🔔 {pendingJobs.length} pendiente{pendingJobs.length > 1 ? 's' : ''}
+          </Text>
+          <View style={{ width: 70 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.pendingModalContent} showsVerticalScrollIndicator={false}>
+          {pendingJobs.map(job => {
+            const link = job.contact_url || job.source_url;
+            const plat = !link ? null
+              : link.includes('facebook.com') || link.includes('fb.com') ? { label: 'Facebook', emoji: '👥', color: '#1877F2' }
+              : link.includes('instagram.com') ? { label: 'Instagram', emoji: '📷', color: '#E1306C' }
+              : link.includes('youtube.com') || link.includes('youtu.be') ? { label: 'YouTube', emoji: '▶️', color: '#FF0000' }
+              : link.includes('whatsapp.com') || link.includes('wa.me') ? { label: 'WhatsApp', emoji: '💬', color: '#25D366' }
+              : link.includes('t.me') || link.includes('telegram') ? { label: 'Telegram', emoji: '✈️', color: '#2AABEE' }
+              : link.includes('tiktok.com') ? { label: 'TikTok', emoji: '🎵', color: '#010101' }
+              : { label: 'Web', emoji: '🌐', color: '#6366F1' };
+            const ins = (job as any).ai_insights;
+            const rawDesc = ins?.description || job.description || '';
+            // Strip the source link from description if it's already shown in the link block
+            const description = link
+              ? rawDesc.replace(link, '').replace(/https?:\/\/\S+/g, (m: string) => link.includes(m.slice(0, 30)) ? '' : m).replace(/\s+/g, ' ').trim()
+              : rawDesc;
+            const isPrivate = link && !description && !job.venue_name;
+            const isEmailSource = job.source_name === 'email';
+            const gmailLink = isEmailSource && link?.includes('mail.google.com') ? link : null;
+
+            function copyLink() {
+              if (Platform.OS === 'web') {
+                try { (navigator as any).clipboard?.writeText(link); } catch {}
+              }
+              Alert.alert('Link copiado', link);
+            }
+
+            return (
+              <View key={job.id} style={styles.pendingCard}>
+                {editingTitles[job.id] !== null && editingTitles[job.id] !== undefined ? (
+                  <TextInput
+                    style={[styles.pendingTitle, styles.pendingTitleInput]}
+                    value={editingTitles[job.id] as string}
+                    onChangeText={v => setEditingTitles(s => ({ ...s, [job.id]: v }))}
+                    onBlur={() => savePendingTitle(job, editingTitles[job.id] as string)}
+                    onSubmitEditing={() => savePendingTitle(job, editingTitles[job.id] as string)}
+                    autoFocus
+                    returnKeyType="done"
+                  />
+                ) : (
+                  <TouchableOpacity onPress={() => setEditingTitles(s => ({ ...s, [job.id]: job.title || '' }))} activeOpacity={0.7}>
+                    <Text style={styles.pendingTitle}>{job.title || '(sin título)'} <Text style={styles.pendingTitleEditHint}>✎</Text></Text>
+                  </TouchableOpacity>
+                )}
+
+                <View style={styles.pendingMetaRow}>
+                  {job.venue_name ? <Text style={styles.pendingMeta}>🏢 {job.venue_name}</Text> : null}
+                  {(job.location_city || job.location_country) ? (
+                    <Text style={styles.pendingMeta}>📍 {[job.location_city, job.location_country].filter(Boolean).join(', ')}</Text>
+                  ) : null}
+                  {job.pay_info ? <Text style={styles.pendingMeta}>💰 {job.pay_info}</Text> : null}
+                  {job.disciplines?.length > 0 ? (
+                    <Text style={styles.pendingMeta}>🎪 {job.disciplines.slice(0, 4).join(', ')}</Text>
+                  ) : null}
+                  {job.contact_email ? <Text style={styles.pendingMeta}>✉️ {job.contact_email}</Text> : null}
+                </View>
+
+                {/* Botón "Ver email original" para entradas de email sin imagen subida */}
+                {gmailLink && (
+                  <TouchableOpacity style={styles.pendingGmailBtn} onPress={() => openExternalUrl(gmailLink)} activeOpacity={0.8}>
+                    <Text style={styles.pendingGmailBtnText}>✉️ Ver email original con imagen →</Text>
+                  </TouchableOpacity>
+                )}
+
+                {link && plat && !gmailLink && (
+                  <View style={[styles.pendingLinkBlock, { borderColor: plat.color + '40' }]}>
+                    <View style={styles.pendingLinkHeader}>
+                      <View style={[styles.pendingLinkBadge, { backgroundColor: plat.color + '18' }]}>
+                        <Text style={[styles.pendingLinkBadgeText, { color: plat.color }]}>{plat.emoji} {plat.label}</Text>
+                      </View>
+                      {isPrivate && (
+                        <View style={styles.pendingPrivateBadge}>
+                          <Text style={styles.pendingPrivateBadgeText}>🔒 Privado</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.pendingLinkUrl} selectable>{link}</Text>
+                    <View style={styles.pendingLinkActions}>
+                      <TouchableOpacity style={styles.pendingLinkOpenBtn} onPress={() => { setOpenedLinks(s => ({ ...s, [job.id]: true })); fetchLinkPreview(job, link); openExternalUrl(link); }} activeOpacity={0.7}>
+                        <Text style={styles.pendingLinkOpenBtnText}>↗ Abrir</Text>
+                      </TouchableOpacity>
+                      {!linkPreviews[job.id] && !fetchingPreview[job.id] && (
+                        <TouchableOpacity style={styles.pendingPreviewBtn} onPress={() => fetchLinkPreview(job, link)} activeOpacity={0.7}>
+                          <Text style={styles.pendingPreviewBtnText}>🔍 Preview</Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity style={styles.pendingLinkCopyBtn} onPress={copyLink} activeOpacity={0.7}>
+                        <Text style={styles.pendingLinkCopyBtnText}>⎘ Copiar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {/* Link preview result */}
+                {fetchingPreview[job.id] && (
+                  <View style={styles.pendingPreviewLoading}>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <Text style={styles.pendingPreviewLoadingText}>Obteniendo preview...</Text>
+                  </View>
+                )}
+                {linkPreviews[job.id] && !fetchingPreview[job.id] && (() => {
+                  const preview = linkPreviews[job.id]!;
+                  if (preview.is_login_wall) return (
+                    <View style={styles.pendingPrivateWarn}>
+                      <Text style={styles.pendingPrivateWarnText}>
+                        🔒 Requiere login — abrí el link, tomá un screenshot y subilo aquí abajo.
+                      </Text>
+                    </View>
+                  );
+                  if (!preview.image && !preview.title) return (
+                    <View style={styles.pendingPrivateWarn}>
+                      <Text style={styles.pendingPrivateWarnText}>
+                        ⚠️ No se encontró preview — podría ser privado o no tener og:image.
+                      </Text>
+                    </View>
+                  );
+                  return (
+                    <View style={styles.pendingPreviewCard}>
+                      {preview.image ? (
+                        <Image source={{ uri: preview.image }} style={styles.pendingPreviewImg} resizeMode="cover" />
+                      ) : null}
+                      {preview.title ? <Text style={styles.pendingPreviewTitle} numberOfLines={2}>{preview.title}</Text> : null}
+                      {preview.image && !job.flyer_url && (
+                        <TouchableOpacity style={styles.pendingPreviewUseBtn} onPress={() => useOgImageAsFlyer(job, preview.image!)} activeOpacity={0.7}>
+                          <Text style={styles.pendingPreviewUseBtnText}>✓ Usar como imagen del post</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })()}
+
+                {isPrivate && !linkPreviews[job.id] && (
+                  <View style={styles.pendingPrivateWarn}>
+                    <Text style={styles.pendingPrivateWarnText}>
+                      ⚠️ Contenido privado — abrí el link para ver si es una audición.
+                    </Text>
+                  </View>
+                )}
+
+                {description ? <Text style={styles.pendingDesc}>{description}</Text> : null}
+                {ins?.website && (
+                  <TouchableOpacity onPress={() => openExternalUrl(ins.website)} activeOpacity={0.7}>
+                    <Text style={styles.pendingWebsite}>🌐 {ins.website}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Genre tag editor */}
+                <View style={styles.pendingTagsSection}>
+                  <Text style={styles.pendingTagsLabel}>Disciplinas</Text>
+                  <View style={styles.pendingTagsRow}>
+                    {DISCIPLINE_GENRES.map(genre => {
+                      const ids = getDisciplinesByGenre(genre.id);
+                      const active = ids.some((d: string) => (job.disciplines || []).includes(d));
+                      return (
+                        <TouchableOpacity
+                          key={genre.id}
+                          style={[styles.pendingGenreTag, active && styles.pendingGenreTagActive]}
+                          onPress={() => toggleGenreOnJob(job, genre.id)}
+                          disabled={!!savingTags[job.id]}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.pendingGenreTagText, active && styles.pendingGenreTagTextActive]}>
+                            {genre.emoji} {genre.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Screenshot / image card — always visible */}
+                {Platform.OS === 'web' && (() => {
+                  const previewUrl = localPreviews[job.id] || job.flyer_url;
+                  function pickFile() {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    (input as any).onchange = (e: any) => {
+                      const file = e.target?.files?.[0];
+                      if (file) uploadJobScreenshot(job, file);
+                    };
+                    input.click();
+                  }
+                  return (
+                    <View style={[styles.pendingScreenshotCard, !previewUrl && styles.pendingScreenshotCardPrompt]}>
+                      {previewUrl ? (
+                        /* Preview — tap to expand, separate "Cambiar" button */
+                        <View style={{ position: 'relative' }}>
+                          <TouchableOpacity onPress={() => setLightboxUrl(previewUrl)} activeOpacity={0.85}>
+                            <Image source={{ uri: previewUrl }} style={styles.pendingFlyerPreviewLarge} resizeMode="cover" />
+                            {uploadingImage[job.id] && (
+                              <View style={styles.pendingFlyerUploadOverlay}>
+                                <ActivityIndicator color={COLORS.white} />
+                                <Text style={styles.pendingFlyerUploadOverlayText}>Subiendo...</Text>
+                              </View>
+                            )}
+                            {uploadSuccess[job.id] && (
+                              <View style={[styles.pendingFlyerUploadOverlay, { backgroundColor: 'rgba(22,101,52,0.82)' }]}>
+                                <Text style={{ fontSize: 22 }}>✓</Text>
+                                <Text style={styles.pendingFlyerUploadOverlayText}>Guardada</Text>
+                              </View>
+                            )}
+                            <View style={styles.pendingFlyerExpandBadge}>
+                              <Text style={styles.pendingFlyerChangeBadgeText}>⤢ Ver</Text>
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.pendingFlyerChangeBadge} onPress={pickFile} activeOpacity={0.8}>
+                            <Text style={styles.pendingFlyerChangeBadgeText}>🖼 Cambiar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <>
+                          <Text style={styles.pendingScreenshotTitle}>📸 Agregar imagen</Text>
+                          <Text style={styles.pendingScreenshotHint}>
+                            {link ? 'Abrí el link → sacá screenshot → volvé y subila.' : 'Subí el flyer o imagen de la publicación.'}
+                          </Text>
+                          <TouchableOpacity style={styles.pendingUploadBtnProminent} onPress={pickFile} activeOpacity={0.7}>
+                            {uploadingImage[job.id]
+                              ? <ActivityIndicator size="small" color={COLORS.primary} />
+                              : <Text style={[styles.pendingUploadBtnText, { color: COLORS.primary, fontWeight: '700', textAlign: 'center', paddingVertical: 4 }]}>📷 Elegir imagen</Text>
+                            }
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  );
+                })()}
+
+                <View style={styles.pendingActions}>
+                  <TouchableOpacity style={styles.approveBtn} onPress={() => approveJob(job.id)}>
+                    <Text style={styles.approveBtnText}>✓ Publicar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.pendingViewBtn} onPress={() => { closePendingPanel(); router.push(`/jobs/${job.id}`); }}>
+                    <Text style={styles.pendingViewBtnText}>👁 Ver</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.rejectBtn} onPress={() => rejectJob(job.id)}>
+                    <Text style={styles.rejectBtnText}>✕ Eliminar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+
+        {/* Lightbox — fullscreen image viewer */}
+        <Modal visible={!!lightboxUrl} transparent animationType="fade" onRequestClose={() => setLightboxUrl(null)}>
+          <TouchableOpacity style={styles.lightboxOverlay} activeOpacity={1} onPress={() => setLightboxUrl(null)}>
+            <Image source={{ uri: lightboxUrl ?? '' }} style={styles.lightboxImage} resizeMode="contain" />
+            <View style={styles.lightboxClose}><Text style={styles.lightboxCloseText}>✕</Text></View>
+          </TouchableOpacity>
+        </Modal>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
@@ -470,38 +888,16 @@ export default function DiscoverScreen() {
       {isAdmin && pendingJobs.length > 0 && (
         <TouchableOpacity
           style={styles.pendingBanner}
-          onPress={() => setShowPending(v => !v)}
+          onPress={() => openPendingPanel()}
           activeOpacity={0.85}
         >
           <Text style={styles.pendingBannerText}>
             🔔 {pendingJobs.length} publicación{pendingJobs.length > 1 ? 'es' : ''} pendiente{pendingJobs.length > 1 ? 's' : ''} de revisión
           </Text>
-          <Text style={styles.pendingBannerArrow}>{showPending ? '▲' : '▼'}</Text>
+          <Text style={styles.pendingBannerArrow}>▶</Text>
         </TouchableOpacity>
       )}
 
-      {/* Admin: pending jobs list */}
-      {isAdmin && showPending && pendingJobs.map(job => (
-        <View key={job.id} style={styles.pendingCard}>
-          <Text style={styles.pendingTitle} numberOfLines={2}>{job.title}</Text>
-          {job.venue_name ? <Text style={styles.pendingMeta}>{job.venue_name}</Text> : null}
-          {(job.location_city || job.location_country) ? (
-            <Text style={styles.pendingMeta}>📍 {[job.location_city, job.location_country].filter(Boolean).join(', ')}</Text>
-          ) : null}
-          {job.contact_email ? <Text style={styles.pendingMeta}>✉️ {job.contact_email}</Text> : null}
-          {job.description ? (
-            <Text style={styles.pendingDesc} numberOfLines={3}>{job.description}</Text>
-          ) : null}
-          <View style={styles.pendingActions}>
-            <TouchableOpacity style={styles.approveBtn} onPress={() => approveJob(job.id)}>
-              <Text style={styles.approveBtnText}>✓ Publicar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.rejectBtn} onPress={() => rejectJob(job.id)}>
-              <Text style={styles.rejectBtnText}>✕ Eliminar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ))}
 
       {/* Venue view: artist profiles */}
       {!isArtist && (
@@ -1007,25 +1403,132 @@ const styles = StyleSheet.create({
   },
   pendingBannerText: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: '#C2410C', flex: 1 },
   pendingBannerArrow: { fontSize: FONTS.sizes.sm, color: '#C2410C', fontWeight: '700' },
-  pendingCard: {
-    marginHorizontal: SPACING.xl, marginBottom: SPACING.sm,
-    backgroundColor: COLORS.white, borderRadius: RADIUS.lg,
-    padding: SPACING.base, borderWidth: 1.5, borderColor: '#FED7AA',
+  // Pending review screen header
+  pendingModalHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.xl, paddingTop: HEADER_TOP + SPACING.sm, paddingBottom: SPACING.base,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.white,
   },
-  pendingTitle: { fontSize: FONTS.sizes.base, fontWeight: '800', color: COLORS.text, marginBottom: 4 },
-  pendingMeta: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, marginBottom: 2 },
-  pendingDesc: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: SPACING.xs, lineHeight: 16 },
-  pendingActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  pendingModalTitle: { fontSize: FONTS.sizes.base, fontWeight: '800', color: '#C2410C', flex: 1, textAlign: 'center' },
+  pendingBackBtn: { minWidth: 70 },
+  pendingBackBtnText: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.primary },
+  pendingModalContent: { padding: SPACING.base, paddingBottom: 48 },
+  // Card
+  pendingCard: {
+    marginBottom: SPACING.base,
+    backgroundColor: COLORS.white, borderRadius: RADIUS.xl,
+    padding: SPACING.base, borderWidth: 1.5, borderColor: '#FED7AA',
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+  },
+  pendingTitle: { fontSize: FONTS.sizes.base, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.sm, lineHeight: 22 },
+  pendingTitleInput: { borderWidth: 1.5, borderColor: COLORS.primary, borderRadius: RADIUS.sm, paddingHorizontal: SPACING.sm, paddingVertical: 4, backgroundColor: COLORS.white },
+  pendingTitleEditHint: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '400' },
+  pendingMetaRow: { gap: 3, marginBottom: SPACING.sm },
+  pendingGmailBtn: { backgroundColor: '#EEF2FF', borderRadius: RADIUS.md, paddingVertical: 10, paddingHorizontal: SPACING.base, alignItems: 'center', marginBottom: SPACING.sm, borderWidth: 1, borderColor: '#C7D2FE' },
+  pendingGmailBtnText: { color: '#4338CA', fontWeight: '700', fontSize: FONTS.sizes.sm },
+  pendingMeta: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, lineHeight: 16 },
+  pendingDesc: { fontSize: FONTS.sizes.sm, color: COLORS.text, marginTop: SPACING.sm, lineHeight: 20 },
+  pendingWebsite: { fontSize: FONTS.sizes.xs, color: '#4338CA', marginTop: 4, textDecorationLine: 'underline' },
+  pendingTagsSection: { marginTop: SPACING.sm },
+  pendingTagsLabel: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  pendingTagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  pendingGenreTag: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#E2E8F0',
+  },
+  pendingGenreTagActive: { backgroundColor: '#EDE9FE', borderColor: '#A78BFA' },
+  pendingGenreTagText: { fontSize: 11, color: COLORS.textSecondary, fontWeight: '600' },
+  pendingGenreTagTextActive: { color: '#6D28D9', fontWeight: '700' },
+  pendingPreviewBtn: {
+    paddingHorizontal: 10, paddingVertical: 7, borderRadius: RADIUS.md,
+    backgroundColor: '#EEF2FF', borderWidth: 1, borderColor: '#C7D2FE',
+  },
+  pendingPreviewBtnText: { fontSize: FONTS.sizes.xs, color: '#4338CA', fontWeight: '700' },
+  pendingPreviewLoading: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.sm },
+  pendingPreviewLoadingText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
+  pendingPreviewCard: { marginTop: SPACING.sm, borderRadius: RADIUS.md, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: COLORS.white },
+  pendingPreviewImg: { width: '100%', height: 160 },
+  pendingPreviewTitle: { fontSize: FONTS.sizes.sm, fontWeight: '600', color: COLORS.text, padding: SPACING.sm, paddingBottom: 4 },
+  pendingPreviewUseBtn: {
+    margin: SPACING.sm, marginTop: 4, backgroundColor: '#D1FAE5', borderRadius: RADIUS.md,
+    paddingVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: '#86EFAC',
+  },
+  pendingPreviewUseBtnText: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: '#166534' },
+  pendingScreenshotCard: { marginTop: SPACING.sm, borderRadius: RADIUS.md, padding: SPACING.sm, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
+  pendingScreenshotCardPrompt: { backgroundColor: '#F0EDFF', borderColor: '#A78BFA' },
+  pendingScreenshotTitle: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: '#5B21B6', marginBottom: 2 },
+  pendingScreenshotHint: { fontSize: FONTS.sizes.xs, color: '#7C3AED', lineHeight: 16, marginBottom: SPACING.sm },
+  pendingImageRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  pendingFlyerThumb: { width: 60, height: 60, borderRadius: RADIUS.md, backgroundColor: '#F1F5F9' },
+  pendingUploadBtn: {
+    flex: 1, paddingVertical: 8, paddingHorizontal: 12, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.white, borderWidth: 1, borderColor: '#E2E8F0',
+    alignItems: 'center', justifyContent: 'center', minHeight: 36,
+  },
+  pendingUploadBtnProminent: { backgroundColor: '#EDE9FE', borderColor: '#A78BFA', borderWidth: 1.5, borderRadius: RADIUS.md, paddingVertical: 10, paddingHorizontal: 14 },
+  pendingUploadBtnText: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, fontWeight: '600' },
+  pendingUploadSuccessBanner: { backgroundColor: '#D1FAE5', borderRadius: RADIUS.md, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 6, borderWidth: 1, borderColor: '#86EFAC' },
+  pendingUploadSuccessText: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: '#166534', textAlign: 'center' },
+  pendingFlyerPreviewLarge: { width: '100%', height: 180, borderRadius: RADIUS.md },
+  pendingFlyerUploadOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.md,
+    alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  pendingFlyerUploadOverlayText: { color: COLORS.white, fontWeight: '700', fontSize: FONTS.sizes.sm },
+  pendingFlyerChangeBadge: {
+    position: 'absolute', bottom: 8, right: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.full,
+    paddingVertical: 3, paddingHorizontal: 8,
+  },
+  pendingFlyerExpandBadge: {
+    position: 'absolute', bottom: 8, left: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: RADIUS.full,
+    paddingVertical: 3, paddingHorizontal: 8,
+  },
+  pendingFlyerChangeBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: '600' },
+  pendingActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.base },
+  lightboxOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  lightboxImage: { width: '100%', height: '85%' },
+  lightboxClose: { position: 'absolute', top: 52, right: 20, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 20, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  lightboxCloseText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
   approveBtn: {
     flex: 1, backgroundColor: '#D1FAE5', borderRadius: RADIUS.md,
-    padding: SPACING.sm, alignItems: 'center', borderWidth: 1, borderColor: '#86EFAC',
+    paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#86EFAC',
   },
   approveBtnText: { fontSize: FONTS.sizes.sm, fontWeight: '800', color: '#166534' },
   rejectBtn: {
     flex: 1, backgroundColor: '#FEF2F2', borderRadius: RADIUS.md,
-    padding: SPACING.sm, alignItems: 'center', borderWidth: 1, borderColor: '#FECACA',
+    paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#FECACA',
   },
   rejectBtnText: { fontSize: FONTS.sizes.sm, fontWeight: '800', color: '#991B1B' },
+  pendingViewBtn: {
+    flex: 1, backgroundColor: '#EFF6FF', borderRadius: RADIUS.md,
+    paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#BFDBFE',
+  },
+  pendingViewBtnText: { fontSize: FONTS.sizes.sm, fontWeight: '800', color: '#1D4ED8' },
+  // Link block
+  pendingLinkBlock: {
+    marginTop: SPACING.sm, borderRadius: RADIUS.lg,
+    padding: SPACING.sm, borderWidth: 1.5, backgroundColor: '#FAFAFA',
+  },
+  pendingLinkHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.xs },
+  pendingLinkBadge: { borderRadius: RADIUS.md, paddingVertical: 3, paddingHorizontal: SPACING.sm },
+  pendingLinkBadgeText: { fontSize: FONTS.sizes.xs, fontWeight: '700' },
+  pendingPrivateBadge: { borderRadius: RADIUS.md, paddingVertical: 3, paddingHorizontal: SPACING.sm, backgroundColor: '#FEF3C7' },
+  pendingPrivateBadgeText: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: '#92400E' },
+  pendingLinkUrl: { fontSize: FONTS.sizes.xs, color: '#374151', lineHeight: 18, marginBottom: SPACING.sm },
+  pendingLinkActions: { flexDirection: 'row', gap: SPACING.sm },
+  pendingLinkOpenBtn: { flex: 1, backgroundColor: '#EFF6FF', borderRadius: RADIUS.md, paddingVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: '#BFDBFE' },
+  pendingLinkOpenBtnText: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: '#1D4ED8' },
+  pendingLinkCopyBtn: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: RADIUS.md, paddingVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB' },
+  pendingLinkCopyBtnText: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: '#374151' },
+  pendingPrivateWarn: {
+    marginTop: SPACING.sm, backgroundColor: '#FFFBEB', borderRadius: RADIUS.md,
+    padding: SPACING.sm, borderWidth: 1, borderColor: '#FDE68A',
+  },
+  pendingPrivateWarnText: { fontSize: FONTS.sizes.xs, color: '#92400E', lineHeight: 16 },
   communityCard: {
     marginHorizontal: SPACING.xl, marginBottom: SPACING.sm,
     backgroundColor: COLORS.white, borderRadius: RADIUS.lg,

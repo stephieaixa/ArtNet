@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS, SPACING, HEADER_TOP } from '../../src/constants/theme';
 import { supabase } from '../../src/services/supabase';
 import { useAuthStore } from '../../src/stores/authStore';
+import { useDiscoverStore } from '../../src/stores/discoverStore';
 
 import DiscoverScreen from './discover/index';
 import ApplicationsScreen from './applications/index';
@@ -89,7 +91,12 @@ function InspirarseScreen() {
 export default function TabsIndex() {
   const { t } = useTranslation();
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState('discover');
+  const { activeTab, setActiveTab } = useDiscoverStore();
+  const insets = useSafeAreaInsets();
+  // On web/Safari browser, add extra bottom padding so tab bar clears the browser toolbar
+  const tabBarBottom = Platform.OS === 'web'
+    ? Math.max(insets.bottom, 16)
+    : insets.bottom;
   const [unreadCount, setUnreadCount] = useState(0);
 
   // Fetch unread message count and subscribe to realtime updates
@@ -133,6 +140,7 @@ export default function TabsIndex() {
     if (tabId === 'actividad') setUnreadCount(0);
   };
 
+
   const TABS = [
     { id: 'discover',    emoji: '🔍', label: t('tabs.discover'),   Screen: DiscoverScreen },
     { id: 'directorio', emoji: '🗂️',  label: t('tabs.directory'),  Screen: DirectorioScreen },
@@ -145,10 +153,10 @@ export default function TabsIndex() {
   return (
     <View style={styles.container}>
       <View style={styles.screenArea}>
-        <ActiveScreen />
+        <ActiveScreen {...(activeTab === 'profile' ? { onBack: () => setActiveTab('discover') } : {})} />
       </View>
 
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { paddingBottom: tabBarBottom }]}>
         {TABS.map(tab => {
           const focused = activeTab === tab.id;
           return (
@@ -190,9 +198,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    height: 80,
-    paddingBottom: 10,
     paddingTop: 8,
+    paddingHorizontal: 4,
   },
   tabItem: {
     flex: 1,
