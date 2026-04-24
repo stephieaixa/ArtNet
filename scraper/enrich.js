@@ -54,7 +54,7 @@ async function searchCompany(venueName) {
  * Usa Groq para extraer info de contacto de los resultados de búsqueda
  */
 async function extractContactFromSearch(venueName, searchResults) {
-  const key = process.env.GROQ_KEY;
+  const key = process.env.GROQ_KEY_2 || process.env.GROQ_KEY;
   if (!key || !searchResults.length) return null;
 
   const resultsText = searchResults
@@ -155,7 +155,21 @@ export async function runEnrichment() {
       continue;
     }
 
-    // Actualiza todos los jobs de este venue con la info encontrada
+    // Construir bloque ai_insights con todo lo que encontró la IA
+    const aiInsights = {};
+    if (info.website) aiInsights.website = info.website;
+    if (info.casting_url) aiInsights.casting_url = info.casting_url;
+    if (info.contact_email) aiInsights.contact_email = info.contact_email;
+    if (info.instagram) aiInsights.instagram = info.instagram;
+    if (info.description) aiInsights.description = info.description;
+    // Agregar snippets relevantes de los resultados de búsqueda
+    const snippets = results
+      .slice(0, 3)
+      .filter(r => r.snippet && r.link)
+      .map(r => ({ title: r.title, url: r.link, snippet: r.snippet }));
+    if (snippets.length) aiInsights.search_snippets = snippets;
+
+    // Actualiza todos los jobs de este venue
     for (const job of venueJobs) {
       const update = {};
 
@@ -165,11 +179,14 @@ export async function runEnrichment() {
       if (!job.contact_url && (info.casting_url || info.website)) {
         update.contact_url = info.casting_url || info.website;
       }
+      if (Object.keys(aiInsights).length > 0) {
+        update.ai_insights = aiInsights;
+      }
 
       if (Object.keys(update).length > 0) {
         await supabase.from('scraped_jobs').update(update).eq('id', job.id);
         enriched++;
-        console.log(`[enrich]   ✅ Job ${job.id}: ${Object.keys(update).join(', ')}`);
+        console.log(`[enrich]   ✅ Job ${job.id}: contacto + ai_insights guardados`);
       }
     }
 

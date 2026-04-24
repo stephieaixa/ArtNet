@@ -134,35 +134,38 @@ const SCHEMA_DESCRIPTION = `Respondé SOLO con JSON válido, sin markdown, sin e
 
 // ─── Groq ─────────────────────────────────────────────────────────────────────
 
-let groqClient = null;
-
-function getGroq() {
-  if (!groqClient && process.env.GROQ_KEY) {
-    groqClient = new Groq({ apiKey: process.env.GROQ_KEY });
-  }
-  return groqClient;
+function getGroqKeys() {
+  const keys = [];
+  if (process.env.GROQ_KEY) keys.push(process.env.GROQ_KEY);
+  if (process.env.GROQ_KEY_2) keys.push(process.env.GROQ_KEY_2);
+  return keys;
 }
 
 async function extractWithGroq(prompt) {
-  const groq = getGroq();
-  if (!groq) return null;
+  const keys = getGroqKeys();
+  if (!keys.length) return null;
 
-  try {
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1,
-      max_tokens: 4096,
-    });
-    return completion.choices[0]?.message?.content ?? null;
-  } catch (err) {
-    if (err?.status === 429) {
-      console.warn('[extract] Groq: límite de requests alcanzado, intentando Gemini...');
-    } else {
-      console.warn('[extract] Groq error:', err.message);
+  for (const key of keys) {
+    try {
+      const client = new Groq({ apiKey: key });
+      const completion = await client.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 4096,
+      });
+      return completion.choices[0]?.message?.content ?? null;
+    } catch (err) {
+      if (err?.status === 429) {
+        console.warn('[extract] Groq: límite de requests alcanzado, probando siguiente key...');
+      } else {
+        console.warn('[extract] Groq error:', err.message);
+        return null;
+      }
     }
-    return null;
   }
+  console.warn('[extract] Groq: todas las keys alcanzaron el límite, intentando Gemini...');
+  return null;
 }
 
 // ─── Gemini ───────────────────────────────────────────────────────────────────
@@ -180,7 +183,7 @@ async function extractWithGemini(prompt) {
   const genAI = getGemini();
   if (!genAI) return null;
 
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  const models = ['gemini-2.0-flash', 'gemini-2.0-flash-lite'];
   for (const modelName of models) {
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
@@ -279,13 +282,14 @@ export async function extractJobsFromText(rawText, sourceContext = '') {
 }
 
 async function extractWithGroqVision(base64Image, prompt) {
-  if (!process.env.GROQ_KEY) return null;
+  const keys = getGroqKeys();
+  if (!keys.length) return null;
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_KEY}`,
+        'Authorization': `Bearer ${keys[0]}`,
       },
       body: JSON.stringify({
         model: 'meta-llama/llama-4-scout-17b-16e-instruct',

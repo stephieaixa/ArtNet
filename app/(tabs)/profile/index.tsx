@@ -20,7 +20,7 @@ const LANG_SUGGESTIONS = [
   { flag: '🇸🇦', name: 'العربية' },
 ];
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ onBack }: { onBack?: () => void }) {
   const { t } = useTranslation();
   const { targetLanguage, isTranslating, setTargetLanguage } = useLanguageStore();
   const { user, setUser, reset } = useAuthStore();
@@ -168,6 +168,12 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <StatusBar style="dark" />
+
+      {(onBack || router.canGoBack()) && (
+        <TouchableOpacity onPress={onBack ?? (() => router.back())} style={styles.backBtn} activeOpacity={0.7}>
+          <Text style={styles.backBtnText}>‹ Explorar</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Avatar con upload */}
       <View style={styles.avatarSection}>
@@ -390,7 +396,9 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   content: { paddingBottom: 40 },
-  avatarSection: { alignItems: 'center', paddingTop: HEADER_TOP, paddingBottom: SPACING.xl },
+  backBtn: { paddingTop: HEADER_TOP, paddingHorizontal: SPACING.lg, paddingBottom: 4 },
+  backBtnText: { fontSize: 17, color: COLORS.primary, fontWeight: '600' },
+  avatarSection: { alignItems: 'center', paddingTop: SPACING.md, paddingBottom: SPACING.xl },
   avatarWrapper: { position: 'relative', marginBottom: SPACING.md },
   avatar: {
     width: 88, height: 88, borderRadius: 44,

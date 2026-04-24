@@ -37,13 +37,19 @@
         "theme_color": "#6C3CE1",
         "background_color": "#F5F3FF",
         "display": "standalone",
+        "icons": [
+          { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+          { "src": "/favicon.ico", "sizes": "48x48", "type": "image/x-icon" }
+        ],
         "share_target": {
           "action": "/post/share",
-          "method": "GET",
+          "method": "POST",
+          "enctype": "multipart/form-data",
           "params": {
             "title": "title",
             "text": "text",
-            "url": "url"
+            "url": "url",
+            "files": [{ "name": "image", "accept": ["image/*"] }]
           }
         }
       }

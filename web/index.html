@@ -36,7 +36,35 @@
       select {
         font-size: max(16px, 1em) !important;
       }
+      /* Override browser autofill yellow background */
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover,
+      input:-webkit-autofill:focus,
+      input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+        box-shadow: 0 0 0 1000px #ffffff inset !important;
+        -webkit-text-fill-color: #1a1a2e !important;
+        caret-color: #1a1a2e !important;
+      }
     </style>
+    <!-- iOS Safari: 100dvh fixes tab bar hidden behind browser toolbar -->
+    <style>
+      html, body { height: 100%; margin: 0; padding: 0; }
+      #root { height: 100dvh; overflow: hidden; }
+    </style>
+    <!-- iOS Safari: reload on bfcache restore + app switch blank page fix -->
+    <script>
+      if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }
+      window.addEventListener('pageshow', function(e) { if (e.persisted) { window.location.reload(); } });
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') {
+          sessionStorage.setItem('_ht', Date.now());
+        } else if (document.visibilityState === 'visible') {
+          var t = sessionStorage.getItem('_ht');
+          if (t && Date.now() - parseInt(t) > 2000) { window.location.reload(); }
+        }
+      });
+    </script>
     <%- htmlWebpackPlugin.tags.headTags %>
   </head>
   <body>

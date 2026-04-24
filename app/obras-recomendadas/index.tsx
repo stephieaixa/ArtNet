@@ -330,7 +330,7 @@ export default function ObrasRecomendadasScreen({ isTab = false }: { isTab?: boo
       {/* Header */}
       <View style={styles.header}>
         {!isTab && (
-          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile')} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} style={styles.backBtn}>
             <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
         )}

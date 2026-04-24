@@ -7,6 +7,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
+import { useDiscoverStore } from '../../src/stores/discoverStore';
 import { StatusBar } from 'expo-status-bar';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../src/services/supabase';
 import * as FileSystem from 'expo-file-system';
@@ -114,6 +115,7 @@ const menuStyles = StyleSheet.create({
 
 export default function PortfolioScreen() {
   const { user } = useAuthStore();
+  const { setActiveTab } = useDiscoverStore();
   const [profile, setProfile]   = useState<ArtistProfile | null>(null);
   const [items, setItems]       = useState<PortfolioItem[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -318,7 +320,7 @@ export default function PortfolioScreen() {
 
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile')} style={s.backBtn}>
+        <TouchableOpacity onPress={() => { setActiveTab('profile'); router.canGoBack() ? router.back() : router.replace('/(tabs)'); }} style={s.backBtn}>
           <Text style={s.backText}>←</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Mi Portfolio</Text>

@@ -192,7 +192,7 @@ export default function TabsIndex() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  screenArea: { flex: 1 },
+  screenArea: { flex: 1, overflow: 'hidden' },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: COLORS.white,

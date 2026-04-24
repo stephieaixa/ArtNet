@@ -59,7 +59,7 @@ async function main() {
     .from('scraped_jobs')
     .select('id, title, location_country, scraped_at, source_name')
     .in('status', ['published', 'pending_review'])
-    .order('scraped_at', { ascending: true }); // el más viejo es el "original"
+    .order('scraped_at', { ascending: false }); // el más nuevo es el "original" (menos probable de expirar)
 
   if (error) { console.error('Error al traer jobs:', error.message); process.exit(1); }
 

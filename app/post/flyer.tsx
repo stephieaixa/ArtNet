@@ -128,8 +128,6 @@ export default function FlyerPostScreen() {
   const [showShare, setShowShare] = useState(false);
   const [publishedFlyerUrl, setPublishedFlyerUrl] = useState<string | null>(null);
   const [wasCropped, setWasCropped] = useState(false);
-  const [cropping, setCropping] = useState(false);
-  const [awaitingCrop, setAwaitingCrop] = useState(false);
 
   // Editable fields after extraction
   const [title, setTitle] = useState('');
@@ -153,27 +151,19 @@ export default function FlyerPostScreen() {
       Alert.alert(t('common.permissionNeeded'), t('flyer.galleryPermission'));
       return;
     }
+    // allowsEditing: true opens native iOS/Android crop UI immediately after selection
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'images',
+      allowsEditing: true,
       quality: 1.0,
       base64: true,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
-      setCropping(true);
-      const { uri: croppedUri, wasCropped: didCrop } = await smartCropFlyer(
-        asset.uri, asset.base64 ?? '', asset.width ?? 1080, asset.height ?? 1920
-      );
-      setCropping(false);
-      setWasCropped(didCrop);
-      setImage(croppedUri);
-
-      // Re-encode cropped image to base64 for analysis
-      const finalBase64 = didCrop
-        ? (await ImageManipulator.manipulateAsync(croppedUri, [], { base64: true, format: ImageManipulator.SaveFormat.JPEG })).base64 ?? ''
-        : asset.base64 ?? '';
-      setImageBase64(finalBase64);
-      setAwaitingCrop(true);
+      setWasCropped(false);
+      setImage(asset.uri);
+      setImageBase64(asset.base64 ?? '');
+      analyzeFlyer(asset.base64 ?? '');
     }
   };
 
@@ -191,13 +181,8 @@ export default function FlyerPostScreen() {
       setImage(asset.uri);
       setImageBase64(asset.base64 ?? '');
       setWasCropped(false);
-      setAwaitingCrop(true);
+      analyzeFlyer(asset.base64 ?? '');
     }
-  };
-
-  const handleProceedAnalyze = () => {
-    setAwaitingCrop(false);
-    analyzeFlyer(imageBase64);
   };
 
   const takePhoto = async () => {
@@ -389,20 +374,6 @@ Respondé ÚNICAMENTE con el JSON (sin markdown, sin bloques de código):
                 <Text style={[styles.uploadBtnText, { color: COLORS.text }]}>{t('flyer.takePhoto')}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.uploadBtn, styles.uploadBtnSecondary]} onPress={async () => {
-                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                if (status !== 'granted') { Alert.alert(t('common.permissionNeeded'), t('flyer.galleryPermission')); return; }
-                const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', allowsEditing: true, quality: 1.0, base64: true });
-                if (!result.canceled && result.assets[0]) {
-                  const asset = result.assets[0];
-                  setImage(asset.uri);
-                  setImageBase64(asset.base64 ?? '');
-                  analyzeFlyer(asset.base64 ?? '');
-                }
-              }}>
-                <Text style={[styles.uploadBtnText, { color: COLORS.text }]}>{t('flyer.manualCrop')}</Text>
-              </TouchableOpacity>
-
               <Text style={styles.supportedText}>{t('flyer.supported')}</Text>
             </View>
           ) : (
@@ -416,34 +387,19 @@ Respondé ÚNICAMENTE con el JSON (sin markdown, sin bloques de código):
                     <Text style={styles.cropBadgeText}>{t('flyer.cropping')}</Text>
                   </View>
                 )}
-                {wasCropped && !cropping && (
+                {wasCropped && (
                   <View style={styles.cropBadge}>
                     <Text style={styles.cropBadgeText}>{t('flyer.cropped')}</Text>
                   </View>
                 )}
               </View>
 
-              {awaitingCrop && !analyzing && (
-                <View style={styles.cropActionCard}>
-                  <Text style={styles.cropActionTitle}>¿Cómo está la imagen?</Text>
-                  <Text style={styles.cropActionSubtitle}>Podés recortar para quedarte solo con el flyer, o analizarla tal como está.</Text>
-                  <View style={styles.cropActionRow}>
-                    <TouchableOpacity style={styles.cropActionBtnSecondary} onPress={handleManualRecrop}>
-                      <Text style={styles.cropActionBtnSecondaryText}>✂️ Recortar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.cropActionBtnPrimary} onPress={handleProceedAnalyze}>
-                      <Text style={styles.cropActionBtnPrimaryText}>🔍 Analizar</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
               {analyzing ? (
                 <View style={styles.analyzingCard}>
                   <ActivityIndicator color={COLORS.primary} />
                   <Text style={styles.analyzingText}>{t('flyer.analyzing')}</Text>
                 </View>
-              ) : !extracted && !awaitingCrop ? (
+              ) : !extracted ? (
                 <TouchableOpacity style={styles.manualBtn} onPress={showManualForm}>
                   <Text style={styles.manualBtnText}>{t('flyer.fillManually')}</Text>
                 </TouchableOpacity>

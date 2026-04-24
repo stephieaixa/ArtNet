@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator, Alert, Platform,
+  ScrollView, ActivityIndicator, Alert, Platform, Image,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -53,18 +53,109 @@ ${text.slice(0, 2000)}` }],
   }
 }
 
+const GROQ_KEY_VISION = process.env.EXPO_PUBLIC_GROQ_KEY ?? '';
+const GEMINI_KEY = process.env.EXPO_PUBLIC_GEMINI_KEY ?? '';
+const SHARE_CACHE = 'artnet-share-v1';
+
+async function analyzeImageWithAI(base64: string): Promise<string | null> {
+  const prompt = `Analizá esta imagen. Es un screenshot de una publicación de redes sociales o una foto de un flyer.
+Extraé SOLO el texto visible que parezca ser una convocatoria o audición para artistas de circo, acrobacia o varieté.
+Si hay texto de una convocatoria, devolvelo completo. Si no hay, respondé "NO_CONTENT".`;
+
+  // Try Groq vision
+  if (GROQ_KEY_VISION) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY_VISION}` },
+        body: JSON.stringify({
+          model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+          max_tokens: 800,
+          messages: [{ role: 'user', content: [
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } },
+            { type: 'text', text: prompt },
+          ]}],
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content ?? '';
+        if (text && text !== 'NO_CONTENT') return text;
+      }
+    } catch {}
+  }
+  // Try Gemini
+  if (GEMINI_KEY) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [
+            { inline_data: { mime_type: 'image/jpeg', data: base64 } },
+            { text: prompt },
+          ]}] }) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+        if (text && text !== 'NO_CONTENT') return text;
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export default function ShareTargetScreen() {
-  const params = useLocalSearchParams<{ title?: string; text?: string; url?: string }>();
+  const params = useLocalSearchParams<{ title?: string; text?: string; url?: string; has_image?: string }>();
 
   const [content, setContent] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [processing, setProcessing] = useState(false);
   const [done, setDone] = useState<'published' | 'review' | null>(null);
+  const [sharedImage, setSharedImage] = useState<string | null>(null); // data URL for preview
+  const [sharedImageBase64, setSharedImageBase64] = useState<string>('');
+  const [readingImage, setReadingImage] = useState(false);
 
-  // Pre-fill from share params
+  // Pre-fill from share params + load shared image from cache
   useEffect(() => {
     const parts = [params.title, params.text, params.url].filter(Boolean).join('\n');
     if (parts) setContent(parts);
+
+    // If image was shared, read it from Cache API
+    if (Platform.OS === 'web' && params.has_image === '1' && 'caches' in window) {
+      setReadingImage(true);
+      (async () => {
+        try {
+          const cache = await caches.open(SHARE_CACHE);
+          const response = await cache.match('/shared-image');
+          if (response) {
+            const blob = await response.blob();
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+              const dataUrl = reader.result as string;
+              const base64 = dataUrl.split(',')[1] ?? '';
+              setSharedImage(dataUrl);
+              setSharedImageBase64(base64);
+              setReadingImage(false);
+              // Auto-extract text from image
+              if (base64 && !parts) {
+                setProcessing(true);
+                const text = await analyzeImageWithAI(base64);
+                setProcessing(false);
+                if (text) setContent(text);
+              }
+            };
+            reader.readAsDataURL(blob);
+            // Delete from cache after reading
+            await cache.delete('/shared-image');
+          } else {
+            setReadingImage(false);
+          }
+        } catch {
+          setReadingImage(false);
+        }
+      })();
+    }
   }, []);
 
   const handleSubmit = async () => {
@@ -89,6 +180,17 @@ export default function ShareTargetScreen() {
     const status = (isCircus && confidence === 'high') ? 'published' : 'pending_review';
     const sourceId = `share::${Date.now()}::${Math.random().toString(36).slice(2)}`;
 
+    // Upload shared image if present
+    let flyerUrl: string | null = null;
+    if (sharedImageBase64) {
+      try {
+        const fileName = `community/${sourceId.replace('::', '-')}.jpg`;
+        const byteArray = Uint8Array.from(atob(sharedImageBase64), c => c.charCodeAt(0));
+        const { error: upErr } = await supabase.storage.from('Portfolio').upload(fileName, byteArray, { contentType: 'image/jpeg' });
+        if (!upErr) flyerUrl = supabase.storage.from('Portfolio').getPublicUrl(fileName).data.publicUrl;
+      } catch {}
+    }
+
     const { error } = await supabase.from('scraped_jobs').insert({
       source_id:    sourceId,
       source_name:  'community',
@@ -96,6 +198,7 @@ export default function ShareTargetScreen() {
       title:        (params.title ?? content.slice(0, 80)).trim(),
       description:  content.trim(),
       contact_email: contactEmail.trim() || null,
+      flyer_url:    flyerUrl,
       status,
       is_scraped:   false,
       scraped_at:   new Date().toISOString(),
@@ -140,10 +243,33 @@ export default function ShareTargetScreen() {
       </View>
 
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+
+        {/* Shared image preview */}
+        {readingImage && (
+          <View style={s.imageReadingCard}>
+            <ActivityIndicator color={COLORS.primary} />
+            <Text style={s.imageReadingText}>Leyendo imagen compartida...</Text>
+          </View>
+        )}
+        {sharedImage && !readingImage && (
+          <View style={s.sharedImageCard}>
+            <Image source={{ uri: sharedImage }} style={s.sharedImagePreview} resizeMode="contain" />
+            {processing ? (
+              <View style={s.imageAnalyzingRow}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={s.imageAnalyzingText}>La IA está leyendo el texto del screenshot...</Text>
+              </View>
+            ) : content ? (
+              <Text style={s.imageExtractedNote}>✓ Texto extraído de la imagen</Text>
+            ) : (
+              <Text style={s.imageExtractedNote}>⚠️ No se encontró texto — completá manualmente</Text>
+            )}
+          </View>
+        )}
+
         <Text style={s.label}>Contenido de la publicación</Text>
         <Text style={s.hint}>
-          Pegá el texto de la convocatoria tal como la viste en el grupo.
-          La IA analizará si es una audición circense.
+          {sharedImage ? 'Revisá y editá el texto extraído de la imagen.' : 'Pegá el texto de la convocatoria tal como la viste en el grupo. La IA analizará si es una audición circense.'}
         </Text>
         <TextInput
           style={[s.input, s.textarea]}
@@ -218,4 +344,11 @@ const s = StyleSheet.create({
   doneSub: { fontSize: FONTS.sizes.base, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },
   doneBtn: { backgroundColor: COLORS.primary, borderRadius: RADIUS.lg, paddingVertical: SPACING.base, paddingHorizontal: SPACING.xl, marginTop: SPACING.md },
   doneBtnText: { color: COLORS.white, fontWeight: '800', fontSize: FONTS.sizes.md },
+  imageReadingCard: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.base, borderWidth: 1, borderColor: COLORS.border },
+  imageReadingText: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary },
+  sharedImageCard: { borderRadius: RADIUS.lg, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.white, marginBottom: SPACING.sm },
+  sharedImagePreview: { width: '100%', height: 220 },
+  imageAnalyzingRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, padding: SPACING.sm },
+  imageAnalyzingText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, flex: 1 },
+  imageExtractedNote: { fontSize: FONTS.sizes.xs, fontWeight: '600', color: '#166534', padding: SPACING.sm, paddingTop: 4 },
 });

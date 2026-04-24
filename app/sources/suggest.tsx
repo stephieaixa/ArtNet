@@ -109,7 +109,7 @@ export default function SuggestSourceScreen() {
         <TouchableOpacity style={styles.doneBtn} onPress={() => { setDone(false); setHandle(''); setDescription(''); setName(''); }}>
           <Text style={styles.doneBtnText}>Sugerir otra fuente</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.backLink} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile')}>
+        <TouchableOpacity style={styles.backLink} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}>
           <Text style={styles.backLinkText}>← Volver al perfil</Text>
         </TouchableOpacity>
       </View>
@@ -122,7 +122,7 @@ export default function SuggestSourceScreen() {
         <StatusBar style="dark" />
 
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile')} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} style={styles.backBtn}>
             <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Sugerí una fuente</Text>

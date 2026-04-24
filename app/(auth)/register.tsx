@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Linking,
+  ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -12,6 +12,19 @@ import { signInWithGoogle } from '../../src/services/googleAuth';
 import { COLORS, FONTS, SPACING, RADIUS } from '../../src/constants/theme';
 import { EXPO_GO_URL } from '../../src/constants/config';
 
+const CAPACITY_ERRORS = [
+  'over_request_rate_limit',
+  'over_email_send_rate_limit',
+  'too many requests',
+  'rate limit',
+  'signup_disabled',
+  'unexpected_failure',
+];
+
+function isCapacityError(msg: string) {
+  return CAPACITY_ERRORS.some(e => msg.toLowerCase().includes(e.toLowerCase()));
+}
+
 export default function RegisterScreen() {
   const { t } = useTranslation();
   const { role } = useLocalSearchParams<{ role: 'artist' | 'venue' }>();
@@ -20,9 +33,12 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [waitlistMode, setWaitlistMode] = useState(false);
+  const [waitlistEmail, setWaitlistEmail] = useState('');
+  const [waitlistDone, setWaitlistDone] = useState(false);
+  const [waitlistLoading, setWaitlistLoading] = useState(false);
 
   const isArtist = role !== 'venue';
-  const isWeb = Platform.OS === 'web';
 
   const showAlert = (title: string, msg: string, onOk?: () => void) => {
     if (Platform.OS === 'web') {
@@ -58,6 +74,11 @@ export default function RegisterScreen() {
         },
       });
       if (error) {
+        if (isCapacityError(error.message)) {
+          setWaitlistEmail(email);
+          setWaitlistMode(true);
+          return;
+        }
         showAlert(t('common.error'), error.message);
         return;
       }
@@ -86,7 +107,6 @@ export default function RegisterScreen() {
     const result = await signInWithGoogle();
     setLoading(false);
     if (result === 'success') {
-      // Guardar el rol elegido en metadata
       await supabase.auth.updateUser({ data: { role: role ?? 'artist' } });
       if (isArtist) {
         router.replace('/(auth)/onboarding/artist');
@@ -97,6 +117,75 @@ export default function RegisterScreen() {
       Alert.alert(t('common.error'), t('register.googleError'));
     }
   };
+
+  const handleJoinWaitlist = async () => {
+    if (!waitlistEmail.trim()) return;
+    setWaitlistLoading(true);
+    try {
+      await supabase.from('waitlist').insert({
+        email: waitlistEmail.trim().toLowerCase(),
+        role: role ?? 'artist',
+      });
+      setWaitlistDone(true);
+    } catch {
+      setWaitlistDone(true);
+    } finally {
+      setWaitlistLoading(false);
+    }
+  };
+
+  // ── Pantalla de lista de espera ──────────────────────────────────────────
+  if (waitlistMode) {
+    return (
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView style={styles.container} contentContainerStyle={[styles.content, { justifyContent: 'center', flex: 1 }]}>
+          <StatusBar style="dark" />
+          {waitlistDone ? (
+            <View style={styles.waitlistBox}>
+              <Text style={styles.waitlistIcon}>✓</Text>
+              <Text style={styles.waitlistTitle}>Ya estás en la lista</Text>
+              <Text style={styles.waitlistMsg}>
+                Vas a recibir un email en las próximas horas para completar tu registro. Revisá también tu carpeta de spam.
+              </Text>
+              <TouchableOpacity onPress={() => router.replace('/(auth)/welcome')} style={styles.waitlistBtn}>
+                <Text style={styles.waitlistBtnText}>Volver al inicio</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.waitlistBox}>
+              <Text style={styles.waitlistIcon}>⏳</Text>
+              <Text style={styles.waitlistTitle}>Alta temporalmente no disponible</Text>
+              <Text style={styles.waitlistMsg}>
+                Hay mucha demanda en este momento. Dejá tu email y te avisamos en cuanto podamos darte acceso.
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={waitlistEmail}
+                onChangeText={setWaitlistEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                placeholder="tu@email.com"
+              />
+              <TouchableOpacity
+                style={[styles.btn, waitlistLoading && styles.btnDisabled]}
+                onPress={handleJoinWaitlist}
+                disabled={waitlistLoading}
+                activeOpacity={0.85}
+              >
+                {waitlistLoading
+                  ? <ActivityIndicator color={COLORS.white} />
+                  : <Text style={styles.btnText}>Avisame cuando esté disponible</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setWaitlistMode(false)} style={{ marginTop: 16, alignItems: 'center' }}>
+                <Text style={{ color: COLORS.textMuted, fontSize: 13 }}>Intentar de nuevo</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -177,22 +266,11 @@ const styles = StyleSheet.create({
   title: { fontSize: FONTS.sizes.xxl, fontWeight: '800', color: COLORS.text },
   subtitle: { fontSize: FONTS.sizes.base, color: COLORS.textSecondary, marginTop: SPACING.xs },
   googleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    backgroundColor: COLORS.white,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.base,
-    marginBottom: SPACING.lg,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: SPACING.sm, backgroundColor: COLORS.white, borderWidth: 1.5,
+    borderColor: COLORS.border, borderRadius: RADIUS.lg, padding: SPACING.base, marginBottom: SPACING.lg,
   },
-  googleLogo: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#4285F4',
-  },
+  googleLogo: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
   googleText: { fontSize: FONTS.sizes.base, fontWeight: '600', color: COLORS.text },
   divider: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.md },
   dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
@@ -216,4 +294,13 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sizes.xs, color: COLORS.textMuted,
     textAlign: 'center', marginTop: SPACING.md, lineHeight: 16,
   },
+  waitlistBox: { alignItems: 'center', padding: SPACING.xl, gap: SPACING.md },
+  waitlistIcon: { fontSize: 48, marginBottom: SPACING.sm },
+  waitlistTitle: { fontSize: FONTS.sizes.xl, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
+  waitlistMsg: { fontSize: FONTS.sizes.base, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },
+  waitlistBtn: {
+    backgroundColor: COLORS.primary, borderRadius: RADIUS.lg,
+    padding: SPACING.base, alignItems: 'center', width: '100%', marginTop: SPACING.sm,
+  },
+  waitlistBtnText: { color: COLORS.white, fontSize: FONTS.sizes.base, fontWeight: '700' },
 });
