@@ -150,9 +150,11 @@ export default function TabsIndex() {
   ];
   const ActiveScreen = TABS.find(t => t.id === activeTab)?.Screen ?? DiscoverScreen;
 
+  const tabBarTotalHeight = 52 + tabBarBottom;
+
   return (
     <View style={styles.container}>
-      <View style={styles.screenArea}>
+      <View style={[styles.screenArea, { paddingBottom: tabBarTotalHeight }]}>
         <ActiveScreen {...(activeTab === 'profile' ? { onBack: () => setActiveTab('discover') } : {})} />
       </View>
 
@@ -194,6 +196,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   screenArea: { flex: 1, overflow: 'hidden' },
   tabBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
