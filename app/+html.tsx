@@ -42,8 +42,7 @@ export default function Root({ children }: PropsWithChildren) {
             input, textarea, select {
               font-size: max(16px, 1em) !important;
             }
-            html, body { height: 100%; margin: 0; padding: 0; overflow-x: hidden; max-width: 100%; }
-            #root { height: 100dvh; overflow: hidden; }
+            html, body { overflow-x: hidden; max-width: 100%; }
             * { touch-action: pan-x pan-y; }
           `,
         }} />
@@ -58,6 +57,10 @@ export default function Root({ children }: PropsWithChildren) {
           `,
         }} />
         <ScrollViewStyleReset />
+        {/* Override after ScrollViewStyleReset so 100dvh wins over 100% on iOS Safari */}
+        <style dangerouslySetInnerHTML={{
+          __html: `#root { height: 100dvh !important; overflow: hidden; }`,
+        }} />
       </head>
       <body>{children}</body>
     </html>
