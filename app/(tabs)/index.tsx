@@ -196,7 +196,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   screenArea: { flex: 1, overflow: 'hidden' },
   tabBar: {
-    position: 'absolute',
+    // 'fixed' on web = always pinned to viewport bottom regardless of container height
+    // 'absolute' on native = standard bottom positioning
+    position: Platform.OS === 'web' ? 'fixed' as any : 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
