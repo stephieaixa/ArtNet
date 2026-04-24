@@ -150,15 +150,13 @@ export default function TabsIndex() {
   ];
   const ActiveScreen = TABS.find(t => t.id === activeTab)?.Screen ?? DiscoverScreen;
 
-  const tabBarTotalHeight = 52 + tabBarBottom;
-
   return (
     <View style={styles.container}>
-      <View style={[styles.screenArea, { paddingBottom: tabBarTotalHeight }]}>
+      <View style={styles.screenArea}>
         <ActiveScreen {...(activeTab === 'profile' ? { onBack: () => setActiveTab('discover') } : {})} />
       </View>
 
-      <View style={[styles.tabBar, { paddingBottom: tabBarBottom }]}>
+      <View style={[styles.tabBar, { paddingBottom: tabBarBottom }]} >
         {TABS.map(tab => {
           const focused = activeTab === tab.id;
           return (
@@ -194,14 +192,8 @@ export default function TabsIndex() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  screenArea: { flex: 1, overflow: 'hidden' },
+  screenArea: { flex: 1 },
   tabBar: {
-    // 'fixed' on web = always pinned to viewport bottom regardless of container height
-    // 'absolute' on native = standard bottom positioning
-    position: Platform.OS === 'web' ? 'fixed' as any : 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
