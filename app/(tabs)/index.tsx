@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS, SPACING, HEADER_TOP } from '../../src/constants/theme';
@@ -93,6 +93,7 @@ export default function TabsIndex() {
   const { user } = useAuthStore();
   const { activeTab, setActiveTab } = useDiscoverStore();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   // On web/Safari browser, add extra bottom padding so tab bar clears the browser toolbar
   const tabBarBottom = Platform.OS === 'web'
     ? Math.max(insets.bottom, 16)
@@ -151,7 +152,7 @@ export default function TabsIndex() {
   const ActiveScreen = TABS.find(t => t.id === activeTab)?.Screen ?? DiscoverScreen;
 
   return (
-    <View style={[styles.container, Platform.OS === 'web' && ({ height: '100dvh' } as any)]}>
+    <View style={[styles.container, Platform.OS === 'web' && { height: windowHeight }]}>
       <View style={styles.screenArea}>
         <ActiveScreen {...(activeTab === 'profile' ? { onBack: () => setActiveTab('discover') } : {})} />
       </View>
