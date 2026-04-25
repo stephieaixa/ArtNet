@@ -151,12 +151,12 @@ export default function TabsIndex() {
   const ActiveScreen = TABS.find(t => t.id === activeTab)?.Screen ?? DiscoverScreen;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, Platform.OS === 'web' && ({ height: '100dvh' } as any)]}>
       <View style={styles.screenArea}>
         <ActiveScreen {...(activeTab === 'profile' ? { onBack: () => setActiveTab('discover') } : {})} />
       </View>
 
-      <View style={[styles.tabBar, { paddingBottom: tabBarBottom }]} >
+      <View style={[styles.tabBar, { paddingBottom: tabBarBottom }]}>
         {TABS.map(tab => {
           const focused = activeTab === tab.id;
           return (
@@ -192,7 +192,7 @@ export default function TabsIndex() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  screenArea: { flex: 1 },
+  screenArea: { flex: 1, overflow: 'hidden' },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: COLORS.white,
