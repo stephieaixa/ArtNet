@@ -151,7 +151,7 @@ export default function TabsIndex() {
   const ActiveScreen = TABS.find(t => t.id === activeTab)?.Screen ?? DiscoverScreen;
 
   return (
-    <View style={[styles.container, Platform.OS === 'web' && ({ height: '100dvh' } as any)]}>
+    <View style={styles.container}>
       <View style={styles.screenArea}>
         <ActiveScreen {...(activeTab === 'profile' ? { onBack: () => setActiveTab('discover') } : {})} />
       </View>
